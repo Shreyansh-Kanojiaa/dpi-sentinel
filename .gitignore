@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# SQLite (runtime data, regenerated on startup)
+*.db
+*.db-journal
+
+# Node / frontend
+node_modules/
+dist/
+frontend/.vite/
+
+# Witness identity keys (never commit private keys)
+*.key
+witness/witness.key
+
+# Env files
+.env
+.env.local
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
