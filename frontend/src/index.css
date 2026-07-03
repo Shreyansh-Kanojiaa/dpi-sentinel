@@ -1,0 +1,208 @@
+/* ============================================================
+   DPI Sentinel — design tokens
+   Palette: institutional ledger, not SaaS. Paper, ink, signal.
+   ============================================================ */
+:root {
+  --paper: #F5F3ED;
+  --paper-raised: #FBFAF6;
+  --ink: #0B0E14;
+  --ink-soft: #2A2D33;
+  --stone: #8B8473;
+  --stone-line: #DCD8CC;
+  --green: #1A7A5E;
+  --green-dim: #E4EFE9;
+  --blue: #2D6CA3;
+  --blue-dim: #E3ECF3;
+  --rust: #C24028;
+  --rust-dim: #F6E4DF;
+  --amber: #A8741A;
+  --amber-dim: #F3EBDA;
+
+  --font-display: "Source Serif 4", Georgia, serif;
+  --font-body: "Inter", -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+a { color: inherit; }
+
+button {
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================
+   Layout components
+   ============================================================ */
+.masthead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 18px;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.masthead-status {
+  text-align: right;
+  flex-shrink: 0;
+  padding-top: 6px;
+}
+
+.rail-row-main {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  cursor: pointer;
+  flex-wrap: wrap;
+}
+.rail-chevron {
+  width: 14px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  color: var(--stone);
+  font-size: 12px;
+}
+.rail-name { flex: 0 0 200px; }
+.rail-status {
+  flex: 0 0 150px;
+  display: flex;
+  align-items: center;
+}
+.rail-stat {
+  flex: 0 0 90px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.rail-stat-value { display: block; }
+.rail-stat-label {
+  font-size: 9.5px;
+  color: var(--stone);
+  font-family: var(--font-body);
+}
+.rail-pulse {
+  flex: 1 1 160px;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 140px;
+}
+
+.rail-expanded {
+  margin-top: 16px;
+  margin-left: 38px;
+  padding-top: 14px;
+  border-top: 1px solid var(--stone-line);
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.rail-expanded-desc {
+  flex: 1 1 320px;
+  max-width: 520px;
+  min-width: 0;
+}
+.rail-expanded-controls {
+  flex: 0 0 220px;
+}
+.methodology-box {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--stone);
+  background: var(--paper-raised);
+  border: 1px solid var(--stone-line);
+  padding: 10px 12px;
+  word-break: break-word;
+}
+
+.btn-danger, .btn-ghost {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.btn-danger {
+  background: var(--rust);
+  color: var(--paper);
+  border: none;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--stone-line);
+}
+
+.incident-entry {
+  display: flex;
+  gap: 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--stone-line);
+}
+.incident-date {
+  flex: 0 0 110px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--stone);
+  padding-top: 2px;
+}
+
+.why-grid {
+  display: flex;
+  gap: 28px;
+}
+.why-grid p { flex: 1; }
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 720px) {
+  .rail-name { flex: 1 1 100%; order: 1; }
+  .rail-chevron { order: 0; }
+  .rail-status { flex: 1 1 auto; order: 2; }
+  .rail-stat { flex: 1 1 30%; order: 3; }
+  .rail-pulse { flex: 1 1 100%; order: 4; justify-content: flex-start; margin-top: 8px; }
+  .rail-pulse svg { width: 100%; max-width: 320px; }
+
+  .rail-expanded { margin-left: 0; }
+  .rail-expanded-controls { flex: 1 1 100%; }
+
+  .incident-entry { flex-direction: column; gap: 4px; }
+  .incident-date { flex: none; }
+
+  .why-grid { flex-direction: column; gap: 14px; }
+
+  .masthead-status { text-align: left; }
+}

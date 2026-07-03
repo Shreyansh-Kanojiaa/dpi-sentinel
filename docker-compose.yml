@@ -1,0 +1,44 @@
+services:
+  witness-a:
+    build: ./witness
+    environment:
+      WITNESS_ID: witness-a
+      PROBE_TARGET: https://www.npci.org.in
+      AGGREGATOR_URL: http://aggregator:8420
+      PROBE_INTERVAL_SECONDS: "8"
+      KEY_PATH: /keys/witness.key
+    volumes:
+      - witness-a-keys:/keys
+    ports:
+      - "8500:8500"
+
+  witness-b:
+    build: ./witness
+    environment:
+      WITNESS_ID: witness-b
+      PROBE_TARGET: https://www.digilocker.gov.in
+      AGGREGATOR_URL: http://aggregator:8420
+      PROBE_INTERVAL_SECONDS: "8"
+      KEY_PATH: /keys/witness.key
+    volumes:
+      - witness-b-keys:/keys
+    ports:
+      - "8501:8500"
+
+  witness-c:
+    build: ./witness
+    environment:
+      WITNESS_ID: witness-c
+      PROBE_TARGET: https://www.npci.org.in
+      AGGREGATOR_URL: http://aggregator:8420
+      PROBE_INTERVAL_SECONDS: "8"
+      KEY_PATH: /keys/witness.key
+    volumes:
+      - witness-c-keys:/keys
+    ports:
+      - "8502:8500"
+
+volumes:
+  witness-a-keys:
+  witness-b-keys:
+  witness-c-keys:
