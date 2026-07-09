@@ -1,52 +1,100 @@
 """
-DPI Sentinel — main application.
+DPI Sentinel — aggregator application (Milestone 2).
 
 Run with:
     uvicorn main:app --reload --port 8420
 
-On startup:
-  - creates SQLite schema
-  - seeds rail config + historical incidents
-  - starts an APScheduler job that probes every rail on a fixed interval
+This process no longer probes anything itself (that was the Tier 0
+prototype). It only:
+  - builds a witness registry at startup from WITNESS_URLS (registry.py)
+  - accepts signed observations from those witnesses at POST /observations,
+    verifying each against the REGISTERED public key (never a key the
+    payload itself supplies — see registry.py / signing.py)
+  - runs quorum consensus over recent observations per rail (quorum.py)
+    to decide operational / insufficient_data / degraded, replacing
+    sla.py's old threshold-on-simulated-rate detection
+
+probe_engine.py is intentionally left in place but unused except by the
+now-inert demo trigger-outage/resolve-outage endpoints below — nothing
+calls run_probe_cycle anymore. sla.py's detect_and_update_incidents is
+likewise unused; rolling_uptime is still used for uptime/latency display,
+which stays meaningful now that ProbeResult rows come from real witnesses.
 """
 
 import asyncio
+import logging
+import os
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from models import Base, Rail, Incident, IncidentEvent, ProbeResult
-from rails_config import seed_rails, backfill_probe_history
+from models import Base, Rail, Witness, Incident, IncidentEvent, ProbeResult, LogEntry, Checkpoint
+from rails_config import seed_rails
 from historical_seed import seed_historical_incidents
-from probe_engine import engine as probe_engine, run_probe_cycle, PROBE_INTERVAL_SECONDS
-from sla import rolling_uptime, detect_and_update_incidents
+from probe_engine import engine as probe_engine
+from sla import rolling_uptime
+from signing import verify_observation_signature
+from registry import build_registry
+import quorum
+import log_chain
+import checkpoints
+import identity
 
-DB_URL = "sqlite:///./dpi_sentinel.db"
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+logger = logging.getLogger("aggregator.main")
+
+DB_URL = os.environ.get("DB_URL", "sqlite:///./dpi_sentinel.db")
 db_engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=db_engine, autoflush=False, autocommit=False)
+
+WITNESS_URLS = [u.strip() for u in os.environ.get("WITNESS_URLS", "").split(",") if u.strip()]
+QUORUM_TICK_SECONDS = float(os.environ.get("QUORUM_TICK_SECONDS", "5"))
+OBSERVATION_FRESHNESS_SECONDS = float(os.environ.get("OBSERVATION_FRESHNESS_SECONDS", "30"))
+FUTURE_TOLERANCE_SECONDS = float(os.environ.get("FUTURE_TOLERANCE_SECONDS", "5"))
+CHECKPOINT_TICK_SECONDS = float(os.environ.get("CHECKPOINT_TICK_SECONDS", "60"))
 
 scheduler = AsyncIOScheduler()
 
 
-async def probe_job():
+async def checkpoint_tick_job():
+    """
+    Milestone 3 — periodically seal the log into a signed Merkle checkpoint
+    when the size (50 entries) or age (1 hour) trigger fires. The actual
+    work touches SQLite and shells out to git, so it runs in a worker thread
+    to avoid blocking the event loop.
+    """
+    def _run():
+        db = SessionLocal()
+        try:
+            checkpoints.maybe_create_checkpoint(db)
+        finally:
+            db.close()
+
+    await asyncio.to_thread(_run)
+
+
+async def quorum_tick_job():
+    """
+    Periodic safety net alongside the event-driven check in POST
+    /observations. Event-driven alone would never notice a witness that
+    just stopped sending observations — nothing arrives to trigger a
+    re-evaluation, so a rail's last-known status would sit stale forever
+    even as participation quietly decays below quorum. This tick re-derives
+    every rail's status from scratch on a fixed interval so that silence
+    is itself detected, at the cost of up to QUORUM_TICK_SECONDS of lag
+    versus a purely event-driven design.
+    """
     db = SessionLocal()
     try:
-        rails = db.query(Rail).all()
-    finally:
-        db.close()
-
-    results = await run_probe_cycle(SessionLocal, rails)
-
-    # Run incident detection per rail against the just-recorded result
-    db = SessionLocal()
-    try:
-        for rail, result in zip(rails, results):
-            detect_and_update_incidents(db, rail, result)
+        for rail in db.query(Rail).all():
+            snapshot = quorum.compute_quorum_snapshot(db, rail)
+            quorum.apply_quorum_incident_logic(db, rail, snapshot)
     finally:
         db.close()
 
@@ -58,11 +106,28 @@ async def lifespan(app: FastAPI):
     try:
         seed_rails(db)
         seed_historical_incidents(db)
-        backfill_probe_history(db)
+        # Tier 0's backfill_probe_history() is deliberately no longer called:
+        # it manufactured synthetic ProbeResult rows with no witness_id,
+        # which doesn't fit a model where every row must trace back to a
+        # registered witness's signature. rails_config.backfill_probe_history
+        # is left in place, just uncalled.
     finally:
         db.close()
 
-    scheduler.add_job(probe_job, "interval", seconds=PROBE_INTERVAL_SECONDS, id="probe_job", next_run_time=datetime.utcnow())
+    db = SessionLocal()
+    try:
+        await build_registry(db, WITNESS_URLS)
+    finally:
+        db.close()
+
+    # Milestone 3: load (or generate) the aggregator's own signing identity
+    # eagerly at startup so its public key is stable and available before the
+    # first checkpoint is signed. Separate from any witness key — see
+    # identity.py for why the aggregator signs with its own key.
+    logger.info("aggregator identity loaded, pubkey=%s", identity.public_key_hex())
+
+    scheduler.add_job(quorum_tick_job, "interval", seconds=QUORUM_TICK_SECONDS, id="quorum_tick", next_run_time=datetime.utcnow())
+    scheduler.add_job(checkpoint_tick_job, "interval", seconds=CHECKPOINT_TICK_SECONDS, id="checkpoint_tick")
     scheduler.start()
 
     yield
@@ -83,6 +148,7 @@ app.add_middleware(
 
 def serialize_rail(db, rail: Rail) -> dict:
     uptime = rolling_uptime(db, rail.id, hours=24)
+    snapshot = quorum.compute_quorum_snapshot(db, rail)
     open_incident = (
         db.query(Incident)
         .filter(Incident.rail_id == rail.id, Incident.status != "resolved", Incident.is_historical.is_(False))
@@ -99,7 +165,8 @@ def serialize_rail(db, rail: Rail) -> dict:
         "probe_target": rail.probe_target,
         "probe_methodology": rail.probe_methodology,
         "color": rail.color,
-        "status": open_incident.severity if open_incident else "operational",
+        "status": snapshot["status"],
+        "quorum": snapshot,
         "active_incident_id": open_incident.id if open_incident else None,
         "uptime_24h": uptime,
     }
@@ -118,6 +185,7 @@ def serialize_incident(incident: Incident) -> dict:
         "is_live_simulation": incident.is_live_simulation,
         "source_note": incident.source_note,
         "min_success_rate": incident.min_success_rate,
+        "quorum_snapshot": incident.quorum_snapshot,
         "events": [
             {
                 "timestamp": e.timestamp.isoformat(),
@@ -193,6 +261,96 @@ def resolve_outage(slug: str):
         db.close()
 
 
+class SignedObservationIn(BaseModel):
+    witness_id: str
+    timestamp: str
+    target: str
+    reachable: bool
+    http_status: int | None = None
+    latency_ms: float | None = None
+    error: str | None = None
+    hash: str
+    signature: str
+
+
+@app.post("/observations")
+def post_observation(payload: SignedObservationIn):
+    db = SessionLocal()
+    try:
+        witness = db.query(Witness).filter_by(slug=payload.witness_id).first()
+        if not witness:
+            logger.warning("rejected observation: unknown witness_id=%r (not in registry)", payload.witness_id)
+            raise HTTPException(status_code=403, detail="unknown witness_id")
+
+        # Recompute the hash from the raw fields ourselves — never trust the
+        # payload's own "hash" claim. This is what catches tampering: editing
+        # any field after signing changes this recomputed hash, so the
+        # signature (made over the ORIGINAL hash) will no longer verify.
+        observation = {
+            "witness_id": payload.witness_id,
+            "timestamp": payload.timestamp,
+            "target": payload.target,
+            "reachable": payload.reachable,
+            "http_status": payload.http_status,
+            "latency_ms": payload.latency_ms,
+            "error": payload.error,
+        }
+        if not verify_observation_signature(observation, payload.signature, witness.public_key_hex):
+            logger.warning("rejected observation from witness_id=%s: signature verification failed", payload.witness_id)
+            raise HTTPException(status_code=400, detail="signature verification failed")
+
+        try:
+            ts = datetime.fromisoformat(payload.timestamp)
+        except ValueError:
+            logger.warning("rejected observation from witness_id=%s: unparseable timestamp %r", payload.witness_id, payload.timestamp)
+            raise HTTPException(status_code=400, detail="invalid timestamp")
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+
+        age_seconds = (datetime.now(timezone.utc) - ts).total_seconds()
+        if age_seconds > OBSERVATION_FRESHNESS_SECONDS:
+            logger.warning("rejected observation from witness_id=%s: timestamp %.1fs old (max %.0fs)", payload.witness_id, age_seconds, OBSERVATION_FRESHNESS_SECONDS)
+            raise HTTPException(status_code=400, detail="observation too old")
+        if age_seconds < -FUTURE_TOLERANCE_SECONDS:
+            logger.warning("rejected observation from witness_id=%s: timestamp %.1fs in the future", payload.witness_id, -age_seconds)
+            raise HTTPException(status_code=400, detail="observation timestamp is in the future")
+
+        rail = db.query(Rail).filter_by(probe_target=payload.target).first()
+        if not rail:
+            logger.warning("rejected observation from witness_id=%s: target %s matches no monitored rail", payload.witness_id, payload.target)
+            raise HTTPException(status_code=400, detail="target does not match any monitored rail")
+
+        pr = ProbeResult(
+            rail_id=rail.id,
+            witness_id=witness.id,
+            timestamp=ts.astimezone(timezone.utc).replace(tzinfo=None),
+            reachable=payload.reachable,
+            http_status=payload.http_status,
+            latency_ms=payload.latency_ms,
+            error=payload.error,
+            signature_hex=payload.signature,
+            observation_hash_hex=payload.hash,
+        )
+        db.add(pr)
+        witness.last_seen_at = datetime.utcnow()
+        db.commit()
+
+        # Milestone 3: append this verified observation to the tamper-evident
+        # hash chain. Done after the ProbeResult is committed and before any
+        # incident events it triggers, so the log's order mirrors causality.
+        log_chain.append_log_entry(
+            db, "observation",
+            log_chain.observation_payload_fields(rail.slug, witness.slug, pr),
+        )
+
+        snapshot = quorum.compute_quorum_snapshot(db, rail)
+        quorum.apply_quorum_incident_logic(db, rail, snapshot)
+
+        return {"ok": True}
+    finally:
+        db.close()
+
+
 @app.get("/api/methodology")
 def get_methodology():
     return {
@@ -212,6 +370,84 @@ def get_methodology():
             "critical_below": 0.70,
         },
     }
+
+
+@app.get("/api/aggregator/pubkey")
+def aggregator_pubkey():
+    """The aggregator's Ed25519 public key — the counterpart to each
+    witness's /pubkey. Anyone verifying a checkpoint signature needs this."""
+    return {"public_key_hex": identity.public_key_hex()}
+
+
+@app.get("/api/log")
+def get_log(limit: int = 50):
+    """Recent tamper-evident log entries, newest first — mostly so you can
+    grab an entry_id to feed the inclusion-proof endpoint below."""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(LogEntry)
+            .order_by(LogEntry.sequence_number.desc())
+            .limit(min(limit, 500))
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "sequence_number": r.sequence_number,
+                "entry_type": r.entry_type,
+                "payload": r.payload,
+                "prev_hash": r.prev_hash,
+                "entry_hash": r.entry_hash,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+
+@app.get("/api/log/{entry_id}/proof")
+def get_log_proof(entry_id: int):
+    """Merkle inclusion proof: the sibling hashes that recompute the
+    checkpoint's published root from this one entry, without the whole log."""
+    db = SessionLocal()
+    try:
+        result = checkpoints.get_inclusion_proof(db, entry_id)
+        if result is None:
+            raise HTTPException(
+                404,
+                "no proof available: entry not found, or not yet inside a "
+                "published checkpoint (wait for the next checkpoint to cover it)",
+            )
+        return result
+    finally:
+        db.close()
+
+
+@app.get("/api/checkpoints")
+def get_checkpoints():
+    """Published Merkle checkpoints, newest first."""
+    db = SessionLocal()
+    try:
+        rows = db.query(Checkpoint).order_by(Checkpoint.seq_end.desc()).all()
+        return [
+            {
+                "id": c.id,
+                "seq_start": c.seq_start,
+                "seq_end": c.seq_end,
+                "entry_count": c.entry_count,
+                "merkle_root": c.merkle_root,
+                "timestamp": c.timestamp.isoformat(),
+                "aggregator_public_key_hex": c.aggregator_public_key_hex,
+                "aggregator_signature": c.aggregator_signature,
+                "git_committed": c.git_committed,
+                "git_commit_sha": c.git_commit_sha,
+            }
+            for c in rows
+        ]
+    finally:
+        db.close()
 
 
 @app.get("/health")

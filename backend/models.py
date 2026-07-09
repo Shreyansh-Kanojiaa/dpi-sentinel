@@ -3,14 +3,16 @@ DPI Sentinel — data models.
 
 Core entities:
   Rail        — a monitored piece of digital public infrastructure (UPI, DigiLocker, ...)
-  ProbeResult — a single synthetic probe outcome against a rail's monitored target
+  Witness     — an independent witness the aggregator has registered (out-of-band, from
+                WITNESS_URLS) and trusts a public key for; see registry.py
+  ProbeResult — a single signed probe observation reported by a witness for a rail
   Incident    — a detected or historical disruption, with a timeline of events
   IncidentEvent — a single timestamped entry in an incident's timeline (detection, update, resolution)
 """
 
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text
+    Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, JSON
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -35,24 +37,45 @@ class Rail(Base):
     incidents = relationship("Incident", back_populates="rail", cascade="all, delete-orphan")
 
 
+class Witness(Base):
+    __tablename__ = "witnesses"
+
+    id = Column(Integer, primary_key=True)
+    slug = Column(String, unique=True, nullable=False)          # "witness-a" — matches witness_id in observations
+    base_url = Column(String, nullable=False)                   # where we fetched /pubkey from (WITNESS_URLS entry)
+    public_key_hex = Column(String, nullable=False)              # the ONLY public key we trust for this witness_id
+    registered_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, nullable=True)               # updated on each accepted observation
+
+    probes = relationship("ProbeResult", back_populates="witness")
+
+
 class ProbeResult(Base):
     __tablename__ = "probe_results"
 
     id = Column(Integer, primary_key=True)
     rail_id = Column(Integer, ForeignKey("rails.id"), nullable=False)
+    witness_id = Column(Integer, ForeignKey("witnesses.id"), nullable=True)  # null only for pre-Milestone-2 rows
     timestamp = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
 
-    # Availability layer (real, from actual HTTP/TLS probing)
+    # Availability layer (real, reported by a witness's own HTTP/TLS probe)
     reachable = Column(Boolean, nullable=False)
     http_status = Column(Integer, nullable=True)
     latency_ms = Column(Float, nullable=True)
     error = Column(String, nullable=True)
 
-    # Simulated transaction-success layer (modeled, clearly labeled in API + UI)
+    # The signature this observation arrived with, kept as the receipt that it was
+    # actually verified against the witness's registered key at ingest time.
+    signature_hex = Column(String, nullable=True)
+    observation_hash_hex = Column(String, nullable=True)
+
+    # Simulated transaction-success layer (legacy Tier-0 self-probe field, unused by
+    # anything that writes rows via POST /observations — kept for old rows' sake)
     simulated_success_rate = Column(Float, nullable=True)       # 0.0 - 1.0
     is_synthetic_injection = Column(Boolean, default=False)     # true during demo-triggered outage
 
     rail = relationship("Rail", back_populates="probes")
+    witness = relationship("Witness", back_populates="probes")
 
 
 class Incident(Base):
@@ -68,7 +91,9 @@ class Incident(Base):
     is_historical = Column(Boolean, default=False)              # real documented past incident
     is_live_simulation = Column(Boolean, default=False)         # triggered live in a demo
     source_note = Column(Text, nullable=True)                   # citation for historical incidents
-    min_success_rate = Column(Float, nullable=True)              # worst point during incident
+    min_success_rate = Column(Float, nullable=True)              # worst point during incident (legacy Tier-0 field)
+    quorum_snapshot = Column(JSON, nullable=True)                # the "receipt": witnesses reporting/agreeing + fractions
+                                                                  # at the moment quorum.py made this decision
 
     rail = relationship("Rail", back_populates="incidents")
     events = relationship("IncidentEvent", back_populates="incident", cascade="all, delete-orphan")
@@ -84,3 +109,63 @@ class IncidentEvent(Base):
     narrative = Column(Text, nullable=False)
 
     incident = relationship("Incident", back_populates="events")
+
+
+class LogEntry(Base):
+    """
+    Milestone 3 — the tamper-evident append-only log.
+
+    Every verified observation and every incident-timeline event is also
+    appended here as one hash-chained entry. Unlike ProbeResult /
+    IncidentEvent (which are just editable rows), each LogEntry commits to
+    the one before it: entry_hash = sha256(prev_hash + payload). Edit any
+    old row's payload and every entry_hash from that point on stops
+    matching — that's what verify_log.py detects.
+
+    A single unified log (not one per record type) is deliberate: the
+    Merkle checkpoints and inclusion proofs need one linear, gapless
+    sequence to build a tree over. Interleaving observations and incident
+    events in one chain also means the *order* in which the aggregator saw
+    things is itself committed to and can't be silently reshuffled later.
+    """
+    __tablename__ = "log_entries"
+
+    id = Column(Integer, primary_key=True)
+    # Monotonic + gapless. Enforced by the serialized append in log_chain.py
+    # (a global lock around "read max seq -> insert"), not by autoincrement,
+    # so the chain order is well-defined even under concurrent /observations.
+    sequence_number = Column(Integer, unique=True, nullable=False, index=True)
+    entry_type = Column(String, nullable=False)                 # "observation" | "incident_event"
+    payload = Column(Text, nullable=False)                      # canonical JSON string of the record's key fields
+    prev_hash = Column(String, nullable=False)                  # entry_hash of seq-1, or GENESIS for the first
+    entry_hash = Column(String, nullable=False)                 # sha256(prev_hash + payload)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class Checkpoint(Base):
+    """
+    Milestone 3 — a periodic Merkle checkpoint over a contiguous batch of
+    LogEntry rows.
+
+    merkle_root is the root of a SHA-256 Merkle tree built over the
+    entry_hashes in [seq_start, seq_end]. aggregator_signature is the
+    aggregator's Ed25519 signature over that root — the aggregator's own
+    identity (backend/identity.py), NOT any witness key, because the claim
+    being signed ("the log looked exactly like this, up to seq N, at this
+    time") is the aggregator's to make, not a witness's.
+
+    The same record is also written to a git repo (see checkpoints.py) so a
+    copy of merkle_root lives somewhere the operator can't silently rewrite.
+    """
+    __tablename__ = "checkpoints"
+
+    id = Column(Integer, primary_key=True)
+    seq_start = Column(Integer, nullable=False)                 # inclusive
+    seq_end = Column(Integer, nullable=False)                   # inclusive
+    entry_count = Column(Integer, nullable=False)
+    merkle_root = Column(String, nullable=False)
+    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    aggregator_public_key_hex = Column(String, nullable=False)
+    aggregator_signature = Column(String, nullable=False)       # Ed25519 sig over bytes.fromhex(merkle_root)
+    git_committed = Column(Boolean, default=False)              # did the git anchor write+commit succeed
+    git_commit_sha = Column(String, nullable=True)
