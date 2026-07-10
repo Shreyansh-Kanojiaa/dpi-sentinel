@@ -15,6 +15,9 @@ services:
       CHECKPOINT_TICK_SECONDS: "60"
       CHECKPOINT_MAX_ENTRIES: "50"
       CHECKPOINT_MAX_AGE_SECONDS: "3600"
+      # Milestone 4: Evidence Certificate issuance rate limit (per IP).
+      CERT_RATE_LIMIT_MAX: "5"
+      CERT_RATE_LIMIT_WINDOW_SECONDS: "600"
     volumes:
       - aggregator-db:/app/data
       - aggregator-keys:/app/keys          # persist the aggregator's Ed25519 identity across restarts
@@ -22,19 +25,22 @@ services:
     ports:
       - "8420:8420"
 
-  # All three witnesses point at the same target (UPI) so quorum can be
-  # demonstrated meaningfully with only 3 witnesses: stopping one still
-  # leaves 2/3 reporting on the SAME rail (participation holds), stopping
-  # two drops it to 1/3 (participation fails -> insufficient_data). If a
-  # witness only ever watched a rail alone, that rail could never clear
-  # MIN_PARTICIPATION_FRACTION against the full registry size — which is
-  # correct behavior, not a bug, but it means single-witness-per-rail
-  # setups won't demo the way these done-check steps expect.
+  # All three witnesses cover BOTH rails (UPI and DigiLocker) so quorum can
+  # be demonstrated meaningfully with only 3 witnesses per rail: stopping
+  # one still leaves 2/3 reporting on a given rail (participation holds),
+  # stopping two drops it to 1/3 (participation fails -> insufficient_data).
+  # Every witness probing every configured target is a deliberate, documented
+  # simplification (see PROBE_TARGETS comment in witness/main.py) — the
+  # aggregator's participation math divides by the TOTAL registered witness
+  # count, not a per-rail-assigned count, so a rail covered by only a subset
+  # of witnesses could never clear MIN_PARTICIPATION_FRACTION. Correct
+  # behavior given that math, not a bug — but it means every witness needs
+  # to cover every rail until per-rail witness assignment is built.
   witness-a:
     build: ./witness
     environment:
       WITNESS_ID: witness-a
-      PROBE_TARGET: https://www.npci.org.in
+      PROBE_TARGETS: "upi:https://www.npci.org.in,digilocker:https://www.digilocker.gov.in"
       AGGREGATOR_URL: http://aggregator:8420
       PROBE_INTERVAL_SECONDS: "8"
       KEY_PATH: /keys/witness.key
@@ -49,7 +55,7 @@ services:
     build: ./witness
     environment:
       WITNESS_ID: witness-b
-      PROBE_TARGET: https://www.npci.org.in
+      PROBE_TARGETS: "upi:https://www.npci.org.in,digilocker:https://www.digilocker.gov.in"
       AGGREGATOR_URL: http://aggregator:8420
       PROBE_INTERVAL_SECONDS: "8"
       KEY_PATH: /keys/witness.key
@@ -64,7 +70,7 @@ services:
     build: ./witness
     environment:
       WITNESS_ID: witness-c
-      PROBE_TARGET: https://www.npci.org.in
+      PROBE_TARGETS: "upi:https://www.npci.org.in,digilocker:https://www.digilocker.gov.in"
       AGGREGATOR_URL: http://aggregator:8420
       PROBE_INTERVAL_SECONDS: "8"
       KEY_PATH: /keys/witness.key

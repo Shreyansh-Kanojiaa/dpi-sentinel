@@ -70,15 +70,18 @@ frontend/  React (Vite) — ledger-style status page
 witness/   Standalone signed-observation service (Milestone 1)
   identity.py          Ed25519 keypair (PyNaCl), generated on first boot, persisted to KEY_PATH
   signing.py           Canonical JSON + SHA-256 + Ed25519 signing of observations
-  prober.py             Async HTTP probe of PROBE_TARGET + signed POST to the aggregator
+  prober.py             Async HTTP probe of one target + signed POST to the aggregator —
+                        called once per configured PROBE_TARGETS entry each cycle
   main.py              FastAPI app: background probe loop + /pubkey, /health
 ```
 
 ### Multi-witness architecture (Milestones 1 + 2)
 
 The whole point of this design is that no single process's word is trusted.
-Independent `witness/` instances each probe the same target and sign what
-they saw with their own private key (Milestone 1). The `backend/` aggregator
+Independent `witness/` instances each probe one or more configured targets
+and sign what they saw with their own private key — one independent
+signature per target, never a combined/batched signature over multiple
+targets (Milestone 1). The `backend/` aggregator
 no longer probes anything itself — it verifies each witness's signature
 against a public key it fetched itself, out-of-band, at startup (never a
 key an observation claims to have), rejects anything stale (a basic
@@ -92,6 +95,87 @@ just gone deaf isn't independent, it's just slow to notice. Every
 quorum-triggered incident carries a `quorum_snapshot` — which witnesses
 reported, which disagreed, and the exact fractions — as the receipt for
 why the call was made; it's returned by `GET /api/incidents`.
+
+### Multi-target witnesses (fix, post-Milestone-4)
+
+`quorum.py`'s participation math is `reporting_witnesses_for_this_rail /
+total_registered_witnesses` — a **global** denominator. That's correct math,
+but it has a sharp edge: a rail watched by only a strict subset of the
+registered witnesses can never clear `MIN_PARTICIPATION_FRACTION`, no
+matter how healthy that subset's reports are. DigiLocker hit exactly this:
+zero witnesses ever probed it, so its participation was permanently `0/3`
+and it sat at `insufficient_data` forever — not because anything was wrong,
+but because nothing was measuring it at all.
+
+The fix is upstream of quorum.py, not inside it: each `witness/` instance
+now probes **every** configured target, not just one. `PROBE_TARGETS` (env
+var, replacing the old singular `PROBE_TARGET`) takes a comma-separated
+`label:url` list, e.g.:
+```
+PROBE_TARGETS="upi:https://www.npci.org.in,digilocker:https://www.digilocker.gov.in"
+```
+Each cycle, a witness probes all its configured targets concurrently (same
+`PROBE_INTERVAL_SECONDS` tick for the whole batch, not staggered per
+target), and reports each as its **own independently signed observation** —
+one HTTP probe, one signature, one `POST /observations` per target, using
+the exact same single-target probe/sign/report code path as before, just
+invoked once per target. Nothing about the signing scheme changed, and
+nothing on the aggregator side changed either: rail routing already worked
+by matching `payload.target` against `Rail.probe_target` by exact string
+equality, so a witness sending the right URL per probe is all that's needed
+— there's no separate `rail_slug` field on the wire, and none was added.
+`label` in `PROBE_TARGETS` is purely a human-readable tag for that
+witness's own logs.
+
+`docker-compose.yml` now gives all three witnesses both targets, which is
+what gives DigiLocker a non-zero participation denominator input for the
+first time. Startup fails loudly (raises `ValueError`, container won't
+come up) if `PROBE_TARGETS` is missing or malformed — a witness silently
+probing nothing would only surface later as an unexplained quorum gap.
+
+**This is a deliberate, documented simplification**, not the long-term
+design: every witness covering every rail sidesteps the global-denominator
+issue without touching `quorum.py`'s math (which is correct and untouched
+by this fix). The correct long-term fix is an explicit witness-to-rail
+assignment, so participation is computed against the count of witnesses
+*assigned to that rail*, not the total registry — deferred post-hackathon;
+see the comment above `PROBE_TARGETS` in `witness/main.py`.
+
+**Watch item, not yet root-caused:** this fix's done-check showed all three
+witnesses logging a `timeout` on their first probe tick after a restart,
+then clean from the second tick on — plausibly container-network/DNS
+cold-start noise, but "multiple witnesses failing in lockstep" was also
+exactly the signature that turned out to be shared-infrastructure noise
+(not real disagreement) during the earlier flapping incident. Don't file
+this away after one occurrence. If it recurs on future restarts, or ever
+happens mid-run rather than only at t=0, it stops being explainable as
+startup noise and needs real investigation — see the matching comment in
+`witness/prober.py`.
+
+### Routing-mismatch visibility (fix, hardening)
+
+`POST /observations` matches `payload.target` against `Rail.probe_target`
+by **exact string equality** — a trailing slash, `http` vs `https`, or a
+`PROBE_TARGETS` entry edited slightly differently from `rails_config.py`
+all produce a target that matches nothing. This was investigated after the
+DigiLocker bug, specifically to rule out a silent-drop failure mode before
+trusting exact-string routing long-term.
+
+**Finding:** it was never silent. An unmatched target already gets a `400`
+(not a 200-and-drop) and a server-side `WARNING` log with the offending
+`witness_id` and `target` — see the routing-match block in `main.py`. What
+was missing was durable *visibility*: a log line only surfaces if someone
+is already tailing container logs at the right moment. `GET
+/api/diagnostics/unmatched-targets` (`backend/unmatched_targets.py`) now
+exposes a running count since process start plus the most recent
+rejections, so a mismatch shows up somewhere you'd actually look — this
+doesn't change what gets rejected or why, only makes an existing rejection
+impossible to miss. The `400` response body was also changed to include
+the actual offending target string (previously only the generic "does not
+match any monitored rail"). The matching logic itself is unchanged —
+still exact string equality, a reasonable design given the small number of
+rails; this is purely about surfacing a match failure, not making matching
+fuzzier.
 
 ### Tamper-evident log (Milestone 3)
 
@@ -149,6 +233,47 @@ missing — a failed push logs a warning and never crashes the aggregator):
     be a dedicated, ideally public repo (public commit history is exactly
     the point — an outside timestamped witness to your roots).
 
+### Outage Copilot + Evidence Certificates (Milestone 4)
+
+The first citizen-facing payoff of all the infrastructure above. While a
+rail is `degraded` (quorum-confirmed), the status page shows an **Outage
+Copilot** panel: don't retry immediately, check your own bank app/SMS for
+the actual debit status, and a warning that outage windows are prime time
+for fake "UPI helpline" scam calls. It also lets anyone affected request an
+**Evidence Certificate** — a signed JSON document usable as supporting
+evidence in a bank dispute or RBI ombudsman complaint.
+
+- **Only for confirmed windows.** `POST /api/certificates` issues a
+  certificate only if the claimed timestamp falls inside an incident that
+  quorum consensus actually declared. No incident → 404. There is
+  deliberately no manual-override or admin path — a demo incident goes
+  through the real pipeline (stop witness containers or point their targets
+  at something failing).
+- **What it does and doesn't claim.** The certificate document itself says,
+  in a `disclaimer` field: it confirms an **infrastructure incident**
+  occurred in the window; it does **not and cannot** confirm any individual
+  transaction's outcome. The requester's transaction reference is stored and
+  displayed as self-reported and unverified. This is what keeps the
+  certificate from being usable to manufacture false refund claims.
+- **One aggregator identity.** Certificates are signed by the same Ed25519
+  key that signs Merkle checkpoints (`backend/identity.py`) — one key for
+  all of the aggregator's own claims.
+- **Self-contained evidence.** Each certificate embeds the incident's quorum
+  snapshot (which witnesses reported/agreed), the incident's hash-chain log
+  entries with their Merkle inclusion proofs, and the signed checkpoint
+  roots they prove into.
+- **Independent verification.** `POST /api/verify` (and the `#/verify` page
+  in the frontend) re-derives trust from the math with three separately
+  reported checks: (1) aggregator signature over the exact document,
+  (2) each log entry rebuilt from content and proven up its Merkle path,
+  (3) the cited checkpoint roots cross-checked against the **git-anchored**
+  copies — not just the live DB, which a dishonest operator could rewrite
+  wholesale. Different failure modes are never collapsed into one boolean.
+- **Rate limited.** Certificate issuance is limited per IP (default 5 per
+  10 minutes, `CERT_RATE_LIMIT_MAX` / `CERT_RATE_LIMIT_WINDOW_SECONDS`),
+  because anonymous minting of signed documents is an abuse surface, not
+  just a load concern; rejected requests are logged.
+
 ## Running it
 
 **Full stack (aggregator + 3 witnesses), via Docker Compose — the easiest way
@@ -204,9 +329,10 @@ python verify_targets.py
 If a target fails, edit `PROBE_TARGET_OVERRIDES` in `rails_config.py` — the
 rest of the system doesn't care what URL it's hitting, as long as it's a
 real public surface. Note that whatever URL you set here must exactly
-match the `target` string a witness reports, or the aggregator will reject
-its observations as belonging to no known rail — update the witness's
-`PROBE_TARGET` env var to match.
+match a `target` string a witness reports, or the aggregator will reject
+those observations as belonging to no known rail — update the matching
+entry in each witness's `PROBE_TARGETS` env var to match (see "Multi-target
+witnesses" below).
 
 **Frontend:**
 
@@ -218,12 +344,14 @@ npm run dev
 
 Visit `http://localhost:5173`. The frontend expects the backend at
 `http://127.0.0.1:8420` by default (override with `VITE_API_BASE`).
-**Known gap as of Milestone 2:** the frontend hasn't been updated for the
-new three-state status or the `quorum` field yet, and the "Inject
-simulated outage" demo button no longer does anything observable (it
-still flips in-memory state in `probe_engine.py`, but nothing reads that
-anymore — status now comes purely from witness quorum). Reconnecting the
-demo control to the new pipeline is a follow-up, not done yet.
+**Known gap (partially closed by Milestone 4):** the rail rows now render
+the quorum three-state status (`operational` / `insufficient_data` /
+`degraded`) and show the Outage Copilot + certificate flow while degraded,
+but the sparkline/simulated-rate display and the "Inject simulated outage"
+demo button still reflect the old self-probing model — the button no longer
+does anything observable (it flips in-memory state in `probe_engine.py`,
+which nothing reads anymore). Reconnecting the demo control to the new
+pipeline is a follow-up, not done yet.
 
 ## Demo script (for judges)
 
@@ -257,15 +385,14 @@ frontend is wired back up to the new pipeline.
 
 ## What's next (roadmap, for the deck)
 
-- Evidence Certificate generation + a citizen-facing verify page
-  (Milestone 4), consuming the tamper-evident log below. The hash-chained
-  transparency log, Merkle checkpoints, and git anchoring are done
-  (Milestone 3) — see "Tamper-evident log" above; multi-witness quorum
-  consensus is done (Milestone 2).
-- Reconnect the frontend's demo controls and rail-status display to the
-  new quorum-based three-state status (`operational` / `insufficient_data`
-  / `degraded`) and `quorum_snapshot` receipt, replacing the old
-  threshold-on-simulated-rate severity display.
+- Evidence Certificates + Outage Copilot + citizen verify page are done
+  (Milestone 4) — see above; they consume the tamper-evident log (Milestone
+  3) and quorum consensus (Milestone 2).
+- Reconnect the rest of the frontend to the new pipeline: the rail-status
+  row now understands the three-state status (`operational` /
+  `insufficient_data` / `degraded`), but the demo controls, sparkline, and
+  simulated-rate display still reflect the old self-probing model.
+- Certificate revocation (e.g. if an incident is later reclassified).
 - Witness coverage for more than one rail per witness (or more witnesses),
   so DigiLocker isn't permanently `insufficient_data`.
 - Real settlement-adjacent signals via partnership with a PSP sandbox or

@@ -14,7 +14,7 @@ The project is being built in deliberate milestones so each part is understood b
 - **Milestone 1**: `witness/` — a standalone, independently-deployed service with its own Ed25519 identity that probes a target and signs what it saw. Decoupled from `backend/` on purpose; at the end of Milestone 1 there was no aggregator to receive its reports yet.
 - **Milestone 2 (current)**: `backend/` was turned into that aggregator. It no longer probes anything itself — it verifies signed observations from registered witnesses and runs quorum consensus (`quorum.py`) to decide a rail's status. This *was* explicitly asked for, which is why `witness/` is now wired to `backend/` — that's a deliberate exception to the "keep them decoupled" default, not a reversal of it. `witness/` itself was not touched to make this happen and remains an independently-deployable service.
 - **Milestone 3 (current)**: the tamper-evident log. `backend/` now also appends every verified observation and every incident event to a hash-chained, append-only `LogEntry` table (`log_chain.py`), seals batches into Merkle checkpoints signed by the aggregator's *own* Ed25519 identity (`identity.py`, `merkle.py`, `checkpoints.py`), and anchors each signed root into an external git repo. `verify_log.py` re-derives the whole chain and cross-checks each checkpoint root against both the DB and the git-committed copy. This is additive: it did **not** change quorum consensus logic — the only edits to `quorum.py` are `log_chain.append_log_entry(...)` calls placed *after* the existing commits that create `IncidentEvent` rows.
-- **Milestone 4 (not yet built)**: Evidence Certificate generation and a citizen-facing verify page, consuming Milestone 3's log/proofs. Don't build this unless explicitly asked.
+- **Milestone 4 (current)**: the citizen-facing payoff. `backend/certificates.py` issues signed Evidence Certificates via `POST /api/certificates` — but ONLY for time windows where quorum consensus actually declared an incident (no manual-override/admin path exists, on purpose; demo incidents go through the real pipeline). Certificates embed the incident's `quorum_snapshot` receipt, the incident's hash-chain entries with Merkle inclusion proofs, and an explicit disclaimer that they confirm an *infrastructure* incident, never an individual transaction outcome (the claimed transaction ref is stored/displayed as self-reported and unverified — this distinction ships in the document itself). Signed with the SAME aggregator key that signs checkpoints — one identity for the aggregator's claims, no third key. `POST /api/verify` re-checks (1) signature against the aggregator's OWN key (never the submitted one), (2) inclusion proofs with leaves rebuilt from content, (3) checkpoint roots against the git-anchored copies (via `verify_log.load_git_checkpoint`) — three separately-reported failure modes, never one boolean. Issuance is rate-limited per IP (in-memory, fine for a single-process aggregator). Frontend: `OutageCopilot.jsx` (guidance panel shown only while a rail is `degraded`, with the certificate request form) and `VerifyPage.jsx` (hash-routed `#/verify`, paste/upload a certificate bundle). Not built, deliberately: certificate revocation, citizen accounts/auth, the B2B/paid API tier.
 
 Old guidance still holds in spirit: don't casually blur layers or merge systems beyond what a given milestone explicitly asks for. But "decoupled" no longer means "wire `witness/` into `backend/` is forbidden" — Milestone 2 already did that, correctly, on request.
 
@@ -24,7 +24,7 @@ Full stack via Docker Compose (aggregator + 3 witnesses — the normal way to ru
 ```bash
 docker compose up
 ```
-`aggregator` (backend/, port 8420) builds its witness registry at startup from `WITNESS_URLS`, retrying each with backoff since compose gives no startup-order guarantee. All three witnesses currently point at the same UPI target (`docker-compose.yml`) so a 3-witness quorum is actually demonstrable — see quorum.py's design notes below for why a rail with only one witness could never clear participation quorum, which is correct behavior, not a bug.
+`aggregator` (backend/, port 8420) builds its witness registry at startup from `WITNESS_URLS`, retrying each with backoff since compose gives no startup-order guarantee. All three witnesses currently probe BOTH the UPI and DigiLocker targets (`docker-compose.yml`'s `PROBE_TARGETS`, see "Multi-target witnesses" below) so a 3-witness quorum is actually demonstrable on *each* rail — see quorum.py's design notes below for why a rail covered by only a subset of registered witnesses could never clear participation quorum, which is correct behavior given that math, not a bug.
 
 Backend only (Python 3.10+, SQLite, no venv assumed), against locally-running or remote witnesses:
 ```bash
@@ -42,14 +42,16 @@ npm run dev        # http://localhost:5173, expects backend at http://127.0.0.1:
 npm run build
 npm run lint        # oxlint
 ```
-**Not yet updated for Milestone 2**: the frontend still expects the old severity-graded status/simulated-rate shape and its "Inject simulated outage" button calls the now-inert `probe_engine` demo endpoints. Expect it to look wrong until a later milestone reconnects it to `quorum`'s three-state status. This is expected, not a regression to fix reflexively.
+**Frontend catch-up status**: Milestone 4 taught the rail rows the quorum three-state status (`degraded` / `insufficient_data` labels + colors) and added the Outage Copilot + `#/verify` page, but the sparkline/simulated-rate display and the "Inject simulated outage" button still reflect the old self-probing model — the button calls the now-inert `probe_engine` demo endpoints. That remainder is expected, not a regression to fix reflexively.
 
 Before any real demo, verify the real probe targets are reachable from the network you'll demo on (the dev sandbox restricts outbound traffic to an allowlist and cannot verify them):
 ```bash
 cd backend
 python verify_targets.py
 ```
-If a target fails, edit `PROBE_TARGET_OVERRIDES` in `rails_config.py` — but note that whatever URL ends up there must exactly match the `target` string a witness reports (its own `PROBE_TARGET`), or the aggregator's rail-matching lookup in `POST /observations` will reject its observations as belonging to no known rail. Keep both in sync when swapping a target.
+If a target fails, edit `PROBE_TARGET_OVERRIDES` in `rails_config.py` — but note that whatever URL ends up there must exactly match a `target` string a witness reports (one entry in its `PROBE_TARGETS`), or the aggregator's rail-matching lookup in `POST /observations` will reject those observations as belonging to no known rail. Keep both in sync when swapping a target.
+
+**Multi-target witnesses (fix, post-Milestone-4):** each `witness/` instance now probes every target in its `PROBE_TARGETS` env var (`label:url` pairs, comma-separated — replaces the old singular `PROBE_TARGET`), not just one. This exists because `quorum.py`'s participation math divides by the *total registered witness count*, not a per-rail-assigned count — so a rail covered by only some witnesses could never clear `MIN_PARTICIPATION_FRACTION`, which is exactly what left DigiLocker permanently at `insufficient_data` (zero witnesses ever probed it). The fix is upstream of quorum.py: every witness now covers every rail, giving each rail a real participation denominator, without touching quorum.py's math at all. Each target still gets its own independent HTTP probe, its own signature, its own `POST /observations` — never a batched/combined signature over multiple targets. See "Multi-target witnesses" in README.md and the comment above `PROBE_TARGETS` in `witness/main.py` for the full reasoning, including why this is a deliberate contained fix (not the long-term per-rail witness assignment).
 
 There is no test suite in this repo currently.
 
@@ -58,7 +60,7 @@ There is no test suite in this repo currently.
 ```
 backend/   FastAPI + SQLite (SQLAlchemy) + APScheduler, single process — the aggregator
   models.py            Rail, Witness, ProbeResult, Incident, IncidentEvent,
-                        LogEntry, Checkpoint (SQLAlchemy schema)
+                        LogEntry, Checkpoint, EvidenceCertificate (SQLAlchemy schema)
   identity.py          Aggregator's OWN Ed25519 keypair (Milestone 3), same load-or-generate
                         pattern as witness/identity.py — signs checkpoints, not observations
   log_chain.py         Append-only hash chain: append_log_entry() (serialized under a lock),
@@ -68,7 +70,17 @@ backend/   FastAPI + SQLite (SQLAlchemy) + APScheduler, single process — the a
   checkpoints.py       maybe_create_checkpoint() (50-entries-or-1-hour trigger), signs the
                         root, get_inclusion_proof(), and git anchoring via subprocess
   verify_log.py        Standalone verifier: recompute-and-compare the whole chain + every
-                        checkpoint root against DB AND the git-committed copy
+                        checkpoint root against DB AND the git-committed copy; also exports
+                        load_git_checkpoint() reused by certificates.py's /api/verify path
+  certificates.py      Milestone 4: per-IP rate limiter, find_covering_incident() (the ONLY
+                        path to a certificate — a real quorum-declared window), certificate
+                        assembly/signing (same aggregator key as checkpoints), and
+                        verify_certificate() (3 separately-reported checks)
+  unmatched_targets.py Fix (post-Milestone-4): in-memory count + last-50 log of observations
+                        POST /observations rejected for matching no Rail.probe_target — the
+                        rejection itself already existed (400 + WARNING log); this only makes
+                        it visible via GET /api/diagnostics/unmatched-targets instead of
+                        requiring someone to already be tailing container logs
   registry.py          Builds the trusted witness registry from WITNESS_URLS at startup,
                         concurrently, each with its own retry/backoff loop
   signing.py           Aggregator-side canonical_json_bytes() + verify_observation_signature() —
@@ -86,8 +98,14 @@ backend/   FastAPI + SQLite (SQLAlchemy) + APScheduler, single process — the a
                         unused — see "What's dead" below. Don't delete without being asked;
                         don't resurrect either without checking why they were retired.
 
-frontend/  React 19 + Vite, no router/state library
-  src/App.jsx          Entire UI: rail rows, incident log, methodology panel, demo controls
+frontend/  React 19 + Vite, no router/state library (a two-line hash "router" in App.jsx
+           switches to the verify page — don't add react-router for this)
+  src/App.jsx          Main UI: rail rows, incident log, methodology panel, demo controls
+  src/OutageCopilot.jsx  Milestone 4: guidance panel shown only while a rail is "degraded"
+                        (don't-retry / check-your-bank / scam warning) + the Evidence
+                        Certificate request form, readable result, and JSON download
+  src/VerifyPage.jsx   Milestone 4: #/verify — paste/upload a certificate bundle, calls
+                        POST /api/verify, renders the per-check breakdown
   src/PulseStrip.jsx   Sparkline visualization of recent probe history
   src/api.js           Thin fetch wrapper for the backend REST API
 
@@ -96,11 +114,15 @@ witness/   Standalone FastAPI service, independent of backend/ and frontend/
                         module that reads/writes private-key bytes
   signing.py           canonical_json_bytes() (sorted keys, fixed separators) + SHA-256 +
                         Ed25519 sign — the single source of truth for reproducible signing
-  prober.py             Real async httpx probe of PROBE_TARGET + signed POST to
+  prober.py             Real async httpx probe of one target + signed POST to
                         f"{AGGREGATOR_URL}/observations"; connection failures are logged
-                        and swallowed, never crash the loop
-  main.py              FastAPI app; lifespan starts an asyncio background probe_loop task
-                        (not APScheduler); GET /pubkey, GET /health
+                        and swallowed, never crash the loop. Single-target — called once
+                        per PROBE_TARGETS entry by main.py's probe_loop, unchanged itself.
+  main.py              FastAPI app; parses PROBE_TARGETS (fails loudly if empty/malformed)
+                        into every target this witness covers; lifespan starts an asyncio
+                        background probe_loop task (not APScheduler) that probes+reports all
+                        configured targets concurrently each tick, one independent signed
+                        observation per target; GET /pubkey, GET /health (health lists targets)
 ```
 
 ### Data flow / request lifecycle (Milestone 2 — current)
@@ -112,7 +134,8 @@ witness/   Standalone FastAPI service, independent of backend/ and frontend/
 5. A periodic `quorum_tick_job` (every `QUORUM_TICK_SECONDS`, via `AsyncIOScheduler`) re-runs the same evaluation for every rail even absent new observations — this is what catches a witness going silent, which the event-driven path in step 3 would never notice on its own (nothing arrives to trigger a re-check).
 6. `GET /api/rails` and `/api/rails/{slug}` still compute everything on read (`main.serialize_rail` calls both `sla.rolling_uptime`, still valid for latency/availability display, and `quorum.compute_quorum_snapshot` fresh) — there is still no persisted "current status" field on `Rail`.
 7. The old demo control endpoints (`POST /api/demo/trigger-outage/{slug}`, `resolve-outage/{slug}`) still exist and still mutate `ProbeEngine`'s in-memory `RailState`, but nothing reads that state anymore — they're inert until a later milestone reconnects them, deliberately left as dead code rather than removed (see "What's dead" below).
-8. Frontend polls the backend via `src/api.js` and renders directly from these REST responses; it has **not** been updated for the new three-state status or `quorum_snapshot` field yet.
+8. Frontend polls the backend via `src/api.js` and renders directly from these REST responses; as of Milestone 4 the rail rows understand the three-state status (and show the Outage Copilot while `degraded`), but the sparkline/simulated-rate display still reflects the old model.
+9. (Milestone 4) `POST /api/certificates` rate-limits per IP first, then requires the claimed timestamp to fall inside a quorum-declared incident window (`certificates.find_covering_incident`: `severity == "degraded"`, not historical, not a legacy simulation; an open incident covers `started_at` onward). It assembles a self-contained signed document — quorum snapshot receipt, the incident's log entries with prev_hash+payload+inclusion proofs, the unverified-transaction-ref disclaimer — signs it with the aggregator identity, persists an `EvidenceCertificate` row, and returns `{certificate, signature, aggregator_public_key_hex}`. `POST /api/verify` re-derives validity: signature against the aggregator's OWN key, Merkle leaves rebuilt from content, checkpoint roots against the git-anchored files. Checks that can't be evaluated report `passed: null`, never silently pass or fail.
 
 ### What's dead (left in place on purpose, not silently deleted)
 
@@ -136,11 +159,16 @@ If you're asked to clean up "unused code" in `backend/`, check this list and thi
 - (Milestone 3) `verify_log.py` rebuilds each Merkle leaf from CONTENT (`compute_entry_hash(prev_hash, payload)`), **not** from the stored `entry_hash` column — otherwise a payload edit that leaves `entry_hash` untouched slips past the checkpoint check (it was caught this way during development). Checkpoint *creation* uses the freshly-correct stored `entry_hash`, which is fine; only the verifier must recompute from payload.
 - (Milestone 3) `log_chain.append_log_entry` holds `_APPEND_LOCK` across read-max-seq → insert → commit. Don't move the commit outside the lock or make the sequence rely on autoincrement — concurrent `POST /observations` would fork the chain.
 - (Milestone 3) The genesis `prev_hash` is the fixed `"0"*64`, never NULL/empty — it makes "this is entry #1" a checkable claim. Git anchoring failures (no remote/network/auth) must stay non-fatal (warn + continue), same tolerance as the witness→aggregator POST.
+- (Milestone 4) A certificate is ONLY issued for a window where quorum actually declared an incident. Never add a manual-override, admin bypass, or test-mode issuance path — a demo incident goes through the real pipeline. `find_covering_incident` filtering on `severity == "degraded"` + `is_historical == False` + `is_live_simulation == False` is what enforces this; the seeded 12 April 2025 incident must never yield a certificate (it was never quorum-confirmed).
+- (Milestone 4) The "confirms infrastructure incident, NOT individual transaction outcome" disclaimer and the `verified: false` marking on the claimed transaction ref live in the signed certificate document itself, not just in docs/UI — removing them from the payload changes what the aggregator is attesting to.
+- (Milestone 4) `verify_certificate` checks signatures against the aggregator's OWN key (`identity.public_key_hex()`), never the `aggregator_public_key_hex` the submitted bundle carries — otherwise anyone re-signs a forged document with their own keypair. Its three checks (signature / inclusion proofs / git checkpoint anchor) are reported separately and never collapsed into one boolean; "couldn't evaluate" is `passed: null`, distinct from both pass and fail.
+- (Milestone 4) Certificates are signed with the same aggregator identity that signs checkpoints — never introduce a separate certificate-signing key.
 
 ### witness/ — design notes
 
 - Each witness has its own Ed25519 identity, generated once and persisted to `KEY_PATH` (a Docker volume per instance in `docker-compose.yml` — `witness-a-keys`, `witness-b-keys`, `witness-c-keys` — so keys are never shared across instances or images).
-- The signed unit is always the *canonical JSON* of the observation dict (`witness_id, timestamp, target, reachable, http_status, latency_ms, error`), hashed with SHA-256, then that hash is what gets Ed25519-signed — not the observation dict directly. Any code that needs to verify a signature must reproduce the observation dict, canonicalize it the same way (`signing.canonical_json_bytes`), hash it, and verify against that hash — never re-derive canonical form ad hoc elsewhere.
+- A witness may cover multiple targets (`PROBE_TARGETS`, see "Multi-target witnesses" above), but **each target still gets its own independent observation, hash, and signature** — never a batched payload covering more than one target. There is no `rail_slug` field on the wire; the aggregator routes purely by matching `payload.target` against `Rail.probe_target`, so sending the correct URL per probe is sufficient.
+- The signed unit is always the *canonical JSON* of one observation dict (`witness_id, timestamp, target, reachable, http_status, latency_ms, error`), hashed with SHA-256, then that hash is what gets Ed25519-signed — not the observation dict directly. Any code that needs to verify a signature must reproduce the observation dict, canonicalize it the same way (`signing.canonical_json_bytes`), hash it, and verify against that hash — never re-derive canonical form ad hoc elsewhere.
 - The signature proves authorship + integrity of a witness's report, not truthfulness of the underlying probe, and not Sybil-resistance across witnesses — that reasoning lives with the aggregator (`backend/`, see below), not here.
 - The aggregator endpoint (`POST /observations`) exists now (Milestone 2, `backend/main.py`), but `witness/prober.report_observation` is unchanged — it still treats `httpx.ConnectError`/timeouts as expected-and-logged, not exceptional. Don't add retries, queuing, or circuit breakers here; that's still explicitly deferred, and adding it here vs. in the aggregator are different decisions with different tradeoffs (see below).
 
@@ -150,5 +178,5 @@ If you're asked to clean up "unused code" in `backend/`, check this list and thi
 - `POST /observations` never trusts anything the payload claims about its own key or hash — see `signing.verify_observation_signature`'s docstring. This is the load-bearing security property of the whole milestone: without it, anyone could submit a `witness_id` they don't own alongside a keypair they do, and the signature would "verify" against a key they control while claiming to speak for someone else.
 - The freshness check (`OBSERVATION_FRESHNESS_SECONDS`, default 30s) exists specifically to bound replay: a captured, validly-signed "all healthy" observation has a ~30s shelf life before it becomes unusable to mask a real, ongoing outage. This is separate from `WINDOW_SECONDS` (default 60s), which is quorum.py's *aggregation* window for deciding current status — don't conflate the two constants when tuning either.
 - Quorum consensus deliberately runs from two independent checks, not one — `MIN_PARTICIPATION_FRACTION` (are enough witnesses even talking?) gates whether `AGREEMENT_SUPERMAJORITY_FRACTION` (do the ones talking agree it's broken?) is even evaluated. A single surviving witness reporting "healthy" must never look like consensus (that's the participation check), and a single dissenting witness among many must never look like an outage (that's the agreement check) — see `quorum.py`'s module docstring for the exact failure scenarios this prevents.
-- Rail-routing in `POST /observations` matches `payload.target` against `Rail.probe_target` by exact string equality. This is fragile by construction (see the invariant above about keeping `PROBE_TARGET_OVERRIDES` and witness `PROBE_TARGET` env vars in sync) but not a trust/security issue — a witness can't forge *authorship* this way, it can at most misroute its own genuine observations if misconfigured. A future milestone could replace this with an explicit witness-to-rail assignment rather than inferring it from a freeform URL string.
+- Rail-routing in `POST /observations` matches `payload.target` against `Rail.probe_target` by exact string equality. This is fragile by construction (see the invariant above about keeping `PROBE_TARGET_OVERRIDES` and witness `PROBE_TARGETS` env vars in sync) but not a trust/security issue — a witness can't forge *authorship* this way, it can at most misroute its own genuine observations if misconfigured. A future milestone could replace this with an explicit witness-to-rail assignment rather than inferring it from a freeform URL string. A mismatch was investigated (post-Milestone-4) and confirmed to already fail loud — 400 + WARNING log, never a silent 200-and-drop — and is now also durably visible via `GET /api/diagnostics/unmatched-targets` (`unmatched_targets.py`). Don't reintroduce a silent-drop path here, and don't remove the visibility call when touching this block.
 - A rail with fewer registered witnesses covering it than `MIN_PARTICIPATION_FRACTION` requires (e.g., a rail only one witness ever targets, against a 3-witness global registry) will sit at `insufficient_data` permanently, no matter how healthy that one witness's reports are. This is correct, not a bug — don't "fix" it by special-casing low-coverage rails to fall back to a looser check.

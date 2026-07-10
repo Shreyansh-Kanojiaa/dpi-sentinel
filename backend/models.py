@@ -142,6 +142,32 @@ class LogEntry(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class EvidenceCertificate(Base):
+    """
+    Milestone 4 — one issued Evidence Certificate.
+
+    The certificate the citizen holds is the signed JSON bundle returned by
+    POST /api/certificates; this row is the aggregator's own record of
+    having issued it (payload_json is the exact canonical string that was
+    signed). claimed_transaction_ref is stored verbatim as SELF-REPORTED,
+    UNVERIFIED text — the certificate document itself says so, because the
+    aggregator has no visibility into individual transaction outcomes and
+    must not appear to confirm them.
+    """
+    __tablename__ = "evidence_certificates"
+
+    id = Column(Integer, primary_key=True)
+    certificate_id = Column(String, unique=True, nullable=False, index=True)
+    rail_id = Column(Integer, ForeignKey("rails.id"), nullable=False)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), nullable=False)
+    claimed_timestamp = Column(DateTime, nullable=False)
+    claimed_transaction_ref = Column(Text, nullable=True)      # self-reported, never verified
+    issued_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    requester_ip = Column(String, nullable=True)
+    payload_json = Column(Text, nullable=False)                 # the exact canonical JSON that was signed
+    signature = Column(String, nullable=False)                  # aggregator Ed25519 sig (hex)
+
+
 class Checkpoint(Base):
     """
     Milestone 3 — a periodic Merkle checkpoint over a contiguous batch of

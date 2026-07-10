@@ -1,10 +1,23 @@
 """
 DPI Sentinel witness — probing loop.
 
-Performs a real async HTTP GET against PROBE_TARGET on a fixed interval,
-builds a signed observation, and POSTs it to the aggregator. The
-aggregator does not exist yet in this milestone — connection failures are
-logged and swallowed so the loop keeps running.
+Performs a real async HTTP GET against one target on a fixed interval
+(called once per PROBE_TARGETS entry by main.py's probe_loop), builds a
+signed observation, and POSTs it to the aggregator. Connection failures
+are logged and swallowed so the loop keeps running.
+
+WATCH ITEM (not yet root-caused, don't file away after one occurrence):
+during the multi-target-witness fix's done-check, all three witness
+containers logged a `timeout` on their very first probe tick after a
+restart, then went clean from the second tick onward — plausible as
+container-network/DNS cold-start noise, but "multiple witnesses failing in
+lockstep" was exactly the signature that earlier turned out to be shared-
+infrastructure noise (not independent disagreement) in a different
+incident. If this lockstep-timeout pattern (a) recurs on future restarts,
+or (b) ever happens mid-run rather than only at t=0, that stops being
+explainable as startup noise and needs real investigation — a timeout is
+recorded in `error` below either way, so it's queryable via ProbeResult
+rows if/when that investigation happens.
 """
 
 import logging

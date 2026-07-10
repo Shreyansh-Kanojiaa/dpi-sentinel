@@ -1,9 +1,15 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { api } from "./api";
 import PulseStrip from "./PulseStrip";
+import OutageCopilot from "./OutageCopilot";
+import VerifyPage from "./VerifyPage";
 
 const SEVERITY_LABEL = {
   operational: "Operational",
+  // Quorum three-state (Milestone 2) — what the backend actually reports now.
+  degraded: "Degraded — witness quorum",
+  insufficient_data: "Insufficient data",
+  // Legacy severity grades, still used by historical incident entries.
   minor: "Degraded",
   major: "Major outage",
   critical: "Critical outage",
@@ -11,6 +17,8 @@ const SEVERITY_LABEL = {
 
 const SEVERITY_COLOR = {
   operational: "var(--green)",
+  degraded: "var(--rust)",
+  insufficient_data: "var(--amber)",
   minor: "var(--amber)",
   major: "var(--rust)",
   critical: "var(--rust)",
@@ -110,6 +118,10 @@ function RailRow({ rail, onTrigger, onResolve, expanded, onToggle }) {
           </div>
         </div>
       )}
+
+      {/* Milestone 4: citizen guidance + Evidence Certificate request, shown
+          only while quorum consensus says this rail is degraded. */}
+      {rail.status === "degraded" && <OutageCopilot rail={rail} />}
     </div>
   );
 }
@@ -180,6 +192,15 @@ function IncidentEntry({ incident }) {
 }
 
 export default function App() {
+  // Minimal hash "router" — the only second page is the certificate
+  // verifier, which deliberately works standalone (no shared state).
+  const [route, setRoute] = useState(window.location.hash);
+  useEffect(() => {
+    const onHash = () => setRoute(window.location.hash);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   const [rails, setRails] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [expandedSlug, setExpandedSlug] = useState(null);
@@ -216,7 +237,22 @@ export default function App() {
     setTimeout(refresh, 500);
   };
 
-  const overallStatus = rails.some((r) => r.status !== "operational") ? "issue" : "ok";
+  // After all hooks (rules of hooks), branch to the verify page if routed there.
+  if (route.startsWith("#/verify")) {
+    return <VerifyPage />;
+  }
+
+  // "insufficient_data" means quorum can't confirm health OR a problem — it
+  // is not itself a disruption (see quorum.py: silence isn't evidence of
+  // health, but it also isn't evidence of an outage). Only "degraded" (or a
+  // legacy severity grade, for historical entries) should read as an active
+  // disruption; a rail with no witness coverage shouldn't paint the whole
+  // masthead red.
+  const overallStatus = rails.some((r) => ["degraded", "minor", "major", "critical"].includes(r.status))
+    ? "issue"
+    : rails.some((r) => r.status === "insufficient_data")
+    ? "partial"
+    : "ok";
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "48px 28px 96px" }}>
@@ -243,12 +279,18 @@ export default function App() {
                 fontSize: 12.5,
                 fontWeight: 600,
                 padding: "5px 12px",
-                border: `1px solid ${overallStatus === "ok" ? "var(--green)" : "var(--rust)"}`,
-                color: overallStatus === "ok" ? "var(--green)" : "var(--rust)",
+                border: `1px solid ${
+                  overallStatus === "ok" ? "var(--green)" : overallStatus === "partial" ? "var(--amber)" : "var(--rust)"
+                }`,
+                color: overallStatus === "ok" ? "var(--green)" : overallStatus === "partial" ? "var(--amber)" : "var(--rust)",
               }}
             >
-              <StatusDot status={overallStatus === "ok" ? "operational" : "critical"} />
-              {overallStatus === "ok" ? "All monitored rails operational" : "Active disruption detected"}
+              <StatusDot status={overallStatus === "ok" ? "operational" : overallStatus === "partial" ? "insufficient_data" : "degraded"} />
+              {overallStatus === "ok"
+                ? "All monitored rails operational"
+                : overallStatus === "partial"
+                ? "Limited witness coverage — not a confirmed disruption"
+                : "Active disruption detected"}
             </div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--stone)", marginTop: 8 }}>
               {lastUpdated ? `updated ${lastUpdated.toLocaleTimeString("en-IN")}` : "connecting…"}
@@ -343,6 +385,9 @@ export default function App() {
       </section>
 
       <footer style={{ paddingTop: 18, borderTop: "1px solid var(--stone-line)", fontSize: 11.5, color: "var(--stone)", lineHeight: 1.6 }}>
+        <div style={{ marginBottom: 10 }}>
+          Holding an Evidence Certificate? <a href="#/verify">Verify it independently →</a>
+        </div>
         DPI Sentinel is an independent, non-commercial research project, built for the SIPS 2026 summit.
         Availability and latency figures are measured live via synthetic probes against each rail's
         public-facing surface. Transaction-level success-rate figures are a calibrated simulation layer,

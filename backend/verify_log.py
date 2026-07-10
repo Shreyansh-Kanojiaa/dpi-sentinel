@@ -104,14 +104,22 @@ def verify_chain(db) -> bool:
     return clean
 
 
-def _load_git_checkpoint(ckpt: Checkpoint) -> dict | None:
+def load_git_checkpoint(seq_start: int, seq_end: int) -> dict | None:
+    """Load the git-anchored copy of a checkpoint by its sequence range.
+    Public because /api/verify (Milestone 4) cross-checks certificate
+    checkpoints against the same git copy this script uses — one loader,
+    not two slightly-different ones."""
     if not CHECKPOINT_REPO_PATH:
         return None
-    fname = f"checkpoint-{ckpt.seq_start:08d}-{ckpt.seq_end:08d}.json"
+    fname = f"checkpoint-{seq_start:08d}-{seq_end:08d}.json"
     path = Path(CHECKPOINT_REPO_PATH) / "checkpoints" / fname
     if not path.exists():
         return None
     return json.loads(path.read_text())
+
+
+def _load_git_checkpoint(ckpt: Checkpoint) -> dict | None:
+    return load_git_checkpoint(ckpt.seq_start, ckpt.seq_end)
 
 
 def verify_checkpoints(db) -> bool:

@@ -27,7 +27,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine
@@ -45,6 +45,8 @@ import quorum
 import log_chain
 import checkpoints
 import identity
+import certificates
+import unmatched_targets
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("aggregator.main")
@@ -317,8 +319,16 @@ def post_observation(payload: SignedObservationIn):
 
         rail = db.query(Rail).filter_by(probe_target=payload.target).first()
         if not rail:
-            logger.warning("rejected observation from witness_id=%s: target %s matches no monitored rail", payload.witness_id, payload.target)
-            raise HTTPException(status_code=400, detail="target does not match any monitored rail")
+            # This was already a loud 400 + WARNING log, not a silent drop —
+            # what was missing was durable, queryable visibility beyond the
+            # process log. record_unmatched_target() doesn't change whether
+            # or how this observation is rejected, only whether a mismatch
+            # shows up somewhere you'd actually look (GET
+            # /api/diagnostics/unmatched-targets) instead of requiring you
+            # to already be tailing container logs to notice it.
+            logger.warning("rejected observation from witness_id=%s: target %r matches no monitored rail", payload.witness_id, payload.target)
+            unmatched_targets.record_unmatched_target(payload.witness_id, payload.target)
+            raise HTTPException(status_code=400, detail=f"target {payload.target!r} does not match any monitored rail")
 
         pr = ProbeResult(
             rail_id=rail.id,
@@ -448,6 +458,109 @@ def get_checkpoints():
         ]
     finally:
         db.close()
+
+
+@app.get("/api/diagnostics/unmatched-targets")
+def get_unmatched_targets():
+    """
+    Observations POST /observations rejected because payload.target matched
+    no Rail.probe_target — already a loud 400 + WARNING log at rejection
+    time (see the routing-match block above), but that log line only
+    surfaces if someone is already tailing container logs. This is the
+    same information made durably visible: a running count since process
+    start, plus the most recent rejections (witness_id, target, when).
+
+    A non-empty response here means some witness's configured target
+    string doesn't exactly match any Rail.probe_target — a trailing slash,
+    http vs https, or a stray edit to PROBE_TARGETS vs rails_config.py are
+    the likely causes (routing is exact-string-match by design; see
+    CLAUDE.md). That witness's observations for the mismatched target are
+    being silently lost from quorum's point of view — silently to quorum,
+    not to this endpoint.
+    """
+    return unmatched_targets.snapshot()
+
+
+class CertificateRequest(BaseModel):
+    rail_slug: str
+    claimed_timestamp: str
+    claimed_transaction_ref: str | None = None
+
+
+@app.post("/api/certificates")
+def post_certificate(body: CertificateRequest, request: Request):
+    """
+    Milestone 4 — issue an Evidence Certificate. Only succeeds if the
+    claimed timestamp falls inside a window where quorum consensus actually
+    declared an incident (see certificates.find_covering_incident). There is
+    no override path: no incident, no certificate.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    if not certificates.check_rate_limit(client_ip):
+        logger.warning("rate-limited certificate request from %s (max %d per %.0fs)",
+                       client_ip, certificates.CERT_RATE_LIMIT_MAX,
+                       certificates.CERT_RATE_LIMIT_WINDOW_SECONDS)
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Too many certificate requests from this address — limited to "
+                f"{certificates.CERT_RATE_LIMIT_MAX} per "
+                f"{int(certificates.CERT_RATE_LIMIT_WINDOW_SECONDS // 60)} minutes. "
+                f"Please try again later."
+            ),
+        )
+
+    claimed_ts = certificates.parse_claimed_timestamp(body.claimed_timestamp)
+    if claimed_ts is None:
+        raise HTTPException(400, "claimed_timestamp must be a valid ISO-8601 timestamp, not in the future")
+
+    db = SessionLocal()
+    try:
+        rail = db.query(Rail).filter_by(slug=body.rail_slug).first()
+        if not rail:
+            raise HTTPException(404, "rail not found")
+
+        incident = certificates.find_covering_incident(db, rail, claimed_ts)
+        if incident is None:
+            logger.info("certificate refused for rail=%s ts=%s from %s: no quorum-confirmed incident covers that time",
+                        rail.slug, claimed_ts.isoformat(), client_ip)
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No quorum-confirmed incident on {rail.name} covers "
+                    f"{claimed_ts.isoformat()}. Certificates are only issued for time "
+                    f"windows where independent witness consensus actually declared a "
+                    f"degradation — there is no way to generate one for a quiet window."
+                ),
+            )
+
+        return certificates.issue_certificate(
+            db, rail, incident, claimed_ts, body.claimed_transaction_ref, client_ip,
+        )
+    finally:
+        db.close()
+
+
+class VerifyRequest(BaseModel):
+    certificate: dict
+    signature: str
+    # Present in the issued bundle; accepted here so a citizen can paste the
+    # whole downloaded file as-is, but verification NEVER uses it — the
+    # signature is always checked against the aggregator's own key.
+    aggregator_public_key_hex: str | None = None
+
+
+@app.post("/api/verify")
+def post_verify(body: VerifyRequest):
+    """
+    Milestone 4 — verify a certificate bundle. POST rather than GET on
+    purpose: a certificate is a multi-kilobyte JSON document, which doesn't
+    fit in a query string (URL length limits) and would smear the full
+    contents across access logs and browser history. The cost is that a
+    verification isn't a linkable/cacheable URL — acceptable, since
+    verifying is an action performed on a document you hold, not a resource.
+    """
+    return certificates.verify_certificate(body.certificate, body.signature)
 
 
 @app.get("/health")
