@@ -145,10 +145,12 @@ see the comment above `PROBE_TARGETS` in `witness/main.py`.
 witnesses logging a `timeout` on their first probe tick after a restart,
 then clean from the second tick on — plausibly container-network/DNS
 cold-start noise, but "multiple witnesses failing in lockstep" was also
-exactly the signature that turned out to be shared-infrastructure noise
-(not real disagreement) during the earlier flapping incident. Don't file
-this away after one occurrence. If it recurs on future restarts, or ever
-happens mid-run rather than only at t=0, it stops being explainable as
+exactly the signature seen during the earlier UPI flapping incident (see
+"Investigation Log" below — that investigation ruled out a sandbox-network
+cause and a flaky-WAF cause, but never reached a confirmed root cause, so
+this pattern is still an open diagnostic question, not a closed one). Don't
+file this away after one occurrence. If it recurs on future restarts, or
+ever happens mid-run rather than only at t=0, it stops being explainable as
 startup noise and needs real investigation — see the matching comment in
 `witness/prober.py`.
 
@@ -352,6 +354,89 @@ demo button still reflect the old self-probing model — the button no longer
 does anything observable (it flips in-memory state in `probe_engine.py`,
 which nothing reads anymore). Reconnecting the demo control to the new
 pipeline is a follow-up, not done yet.
+
+## Investigation Log
+
+Engineering history worth keeping, not just a demo note: the chase across
+several sessions for why the UPI incident log was rapidly cycling
+detect → update → resolve instead of holding a stable incident. Written as
+a timeline, with "confirmed," "ruled out," and "still open" kept explicitly
+separate — this is a record of what was actually established, not a
+polished postmortem. See also the lockstep-timeout watch item in "Multi-
+target witnesses" above, which is the same "correlated failure across
+witnesses" diagnostic principle surfacing again in a different fix; that
+note and this log cross-reference each other rather than repeating the
+same content.
+
+**1. The symptom (first observed).** The incident log for UPI showed rapid
+detect → update → resolve cycling — multiple full cycles within a ~2
+minute window, with `AGREEMENT_SUPERMAJORITY_FRACTION`-relevant agreement
+percentages swinging between values like 33% / 67% / 100% and back. This
+looked like instability, not a real, held incident.
+
+**2. Hypothesis 1 — ruled out.** Initial guess: `PROBE_TARGET` had been
+changed on witnesses one at a time during manual testing, so witnesses
+were briefly watching different targets and genuinely disagreeing.
+**Ruled out** — confirmed all three witnesses' targets were changed
+together, not staggered.
+
+**3. Hypothesis 2 — investigated, then reframed.** Next theory: a shared,
+restricted outbound network specific to whatever environment was running
+the witness containers was causing correlated failures across all three
+"independent" witnesses at once. This was supported by direct evidence: a
+raw `ProbeResult` query across the flapping window showed all three
+witnesses failing with `connect_error` at the exact same moments, in
+perfect lockstep, with no partial disagreement anywhere — the signature of
+one shared cause, not three independently-arrived-at observations.
+
+This theory was **partially retired**: direct investigation (`hostname`,
+`uname -a`, `whoami`/`id`, absence of `/.dockerenv`, `docker info` against
+a local daemon) confirmed the containers were running via Docker on the
+user's own Fedora machine the whole time, on the user's normal home
+network — not inside any separate restricted sandbox. So "restricted
+sandbox network" specifically **is ruled out**. The broader diagnostic
+pattern it pointed to — correlated, lockstep failure across witnesses
+means one shared cause, not real disagreement — is still the right
+principle; it just wasn't sandbox-specific. That's the same principle
+invoked by the lockstep-timeout watch item under "Multi-target witnesses"
+above.
+
+**4. Hypothesis 3 — tested, NPCI's response ruled out as flaky.** Direct,
+repeated `curl -v` against `https://www.npci.org.in` from the same real
+machine/network, with no app code involved, returned a consistent HTTP
+403 every time, from Akamai's edge (`server-timing: cdn-cache`, `ak_`
+headers present), with a clean TLS/HTTP2 handshake on every attempt. This
+is a deterministic, stable WAF block — not intermittent, not flaky. So
+"NPCI's bot-protection behaves inconsistently" **is ruled out** as the
+cause of the flapping, even though NPCI blocking real requests at all is
+itself a known, permanent, and separately important fact (see the
+operational decision below).
+
+**5. Still open — not yet root-caused.** With both the sandbox-network
+theory and the flaky-WAF theory ruled out, and NPCI's block confirmed
+consistent rather than intermittent, the original flapping pattern
+(correlated, in-lockstep, rapidly oscillating) does **not** yet have a
+confirmed root cause. Leading candidates, **unconfirmed**:
+- differences between witnesses in outgoing request headers/User-Agent
+  causing the WAF to treat them inconsistently from each other;
+- a timeout threshold close enough to real response latency that some
+  requests cross it and others don't;
+- a timing/race pattern in how close together consecutive probes fire.
+
+This needs its own direct diagnostic — comparing raw outgoing request
+details across witnesses during an actual flapping window — before any
+fix is attempted. Nothing here should be read as more resolved than this.
+
+**6. Operational decision (settled, independent of the open root cause
+above).** Because NPCI's production endpoint consistently 403s real,
+unrecognized-client requests, it cannot be used as the target for the
+live Round 2 demo recording — a monitor whose primary target is always
+blocked isn't a compelling demo, independent of the flapping question.
+**Decision:** use the project's own injected-outage demo control for any
+recorded/live demonstration, not the real NPCI endpoint. This is a
+demo-recording decision, not a change to what the system actually does
+against real targets in normal operation, and doesn't affect the
+legitimacy of the monitoring architecture itself.
 
 ## Demo script (for judges)
 
