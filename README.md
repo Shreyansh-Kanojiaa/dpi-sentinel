@@ -438,36 +438,6 @@ demo-recording decision, not a change to what the system actually does
 against real targets in normal operation, and doesn't affect the
 legitimacy of the monitoring architecture itself.
 
-## Demo script (for judges)
-
-**Note:** steps 3–4 below describe the Milestone-0/1 demo flow via the
-frontend's "Inject simulated outage" button. As of Milestone 2 that button
-is inert (see "Running it" above) — the equivalent live demo today is
-stopping/restarting witness containers or POSTing synthetic signed
-observations (see the aggregator's design notes in CLAUDE.md) to show
-quorum consensus reacting in real time. Update this script once the
-frontend is wired back up to the new pipeline.
-
-1. Show the status page at rest — both rails operational, real availability
-   and latency numbers ticking on an 8-second interval, simulated success
-   rate visible and clearly labeled.
-2. Expand a rail row — show the methodology box. This is where you explain
-   the real/simulated split out loud, before anyone can ask "wait, is this
-   real?"
-3. Click **Inject simulated outage** on UPI. Within ~10 seconds: the header
-   flips to "Active disruption detected," the row turns critical, the pulse
-   strip visibly cliffs off, and a new incident card appears in the log with
-   an auto-generated detection narrative — while DigiLocker, right below,
-   stays untouched. That isolation is the proof the system actually works
-   per-rail, not just globally.
-4. Click **Resolve**. Watch the recovery propagate: pulse strip recovers,
-   incident auto-closes with a "Resolved" event and the actual recovered
-   rate.
-5. Scroll to the historical incident — the real 12 April 2025 UPI
-   degradation, with full sourcing — to show the same system modeling
-   ground truth, not just synthetic demo data.
-6. Close on "Why an independent register" — the accountability framing.
-
 ## What's next (roadmap, for the deck)
 
 - Evidence Certificates + Outage Copilot + citizen verify page are done
