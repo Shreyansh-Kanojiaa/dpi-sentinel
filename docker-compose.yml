@@ -1,4 +1,14 @@
 services:
+  # Recording aid only, not part of the product: a controllable HTTP target
+  # for the pitch video's "degraded" demo beat. Public status-code test
+  # services (httpstat.us, httpbin.org) proved unreliable, so witnesses probe
+  # this container instead. `docker compose stop demo-target` makes it
+  # unreachable -> unhealthy per quorum's agreement check (see quorum.py);
+  # `docker compose start demo-target` recovers it. No file edits needed to
+  # trigger or resolve the incident.
+  demo-target:
+    image: nginx:alpine
+
   aggregator:
     build: ./backend
     environment:
@@ -40,7 +50,7 @@ services:
     build: ./witness
     environment:
       WITNESS_ID: witness-a
-      PROBE_TARGETS: "upi:https://www.npci.org.in,digilocker:https://www.digilocker.gov.in"
+      PROBE_TARGETS: "upi:http://demo-target/,digilocker:https://www.digilocker.gov.in"
       AGGREGATOR_URL: http://aggregator:8420
       PROBE_INTERVAL_SECONDS: "8"
       KEY_PATH: /keys/witness.key
@@ -50,12 +60,13 @@ services:
       - "8500:8500"
     depends_on:
       - aggregator
+      - demo-target
 
   witness-b:
     build: ./witness
     environment:
       WITNESS_ID: witness-b
-      PROBE_TARGETS: "upi:https://www.npci.org.in,digilocker:https://www.digilocker.gov.in"
+      PROBE_TARGETS: "upi:http://demo-target/,digilocker:https://www.digilocker.gov.in"
       AGGREGATOR_URL: http://aggregator:8420
       PROBE_INTERVAL_SECONDS: "8"
       KEY_PATH: /keys/witness.key
@@ -65,12 +76,13 @@ services:
       - "8501:8500"
     depends_on:
       - aggregator
+      - demo-target
 
   witness-c:
     build: ./witness
     environment:
       WITNESS_ID: witness-c
-      PROBE_TARGETS: "upi:https://www.npci.org.in,digilocker:https://www.digilocker.gov.in"
+      PROBE_TARGETS: "upi:http://demo-target/,digilocker:https://www.digilocker.gov.in"
       AGGREGATOR_URL: http://aggregator:8420
       PROBE_INTERVAL_SECONDS: "8"
       KEY_PATH: /keys/witness.key
@@ -80,6 +92,7 @@ services:
       - "8502:8500"
     depends_on:
       - aggregator
+      - demo-target
 
 volumes:
   witness-a-keys:

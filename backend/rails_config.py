@@ -67,7 +67,7 @@ RAILS_SEED = [
 # If a real target is unreachable from a given network on demo day, swap it here —
 # nothing else in the system needs to change.
 PROBE_TARGET_OVERRIDES = {
-    # "upi": "https://alternate-public-surface.example",
+    "upi": "http://demo-target/",
 }
 
 
