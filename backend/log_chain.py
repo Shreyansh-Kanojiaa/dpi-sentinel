@@ -30,7 +30,6 @@ import hashlib
 import logging
 import threading
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models import LogEntry

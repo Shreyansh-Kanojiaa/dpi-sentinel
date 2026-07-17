@@ -2,8 +2,6 @@ fastapi
 uvicorn[standard]
 httpx
 sqlalchemy
-aiosqlite
 pydantic
 apscheduler
-python-multipart
 pynacl

@@ -34,7 +34,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from models import Base, Rail, Witness, Incident, IncidentEvent, ProbeResult, LogEntry, Checkpoint
+from models import Base, Rail, Witness, Incident, ProbeResult, LogEntry, Checkpoint
 from rails_config import seed_rails
 from historical_seed import seed_historical_incidents
 from probe_engine import engine as probe_engine
