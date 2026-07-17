@@ -26,18 +26,16 @@ const CHECK_META = {
 function CheckRow({ name, result }) {
   const meta = CHECK_META[name] || { title: name, explains: "" };
   const passed = result.passed;
-  const color = passed === true ? "var(--green)" : passed === false ? "var(--rust)" : "var(--amber)";
-  const label = passed === true ? "PASS" : passed === false ? "FAIL" : "NOT CHECKED";
+  const stampCls = passed === true ? "stamp--green" : passed === false ? "stamp--rust" : "stamp--amber";
+  const label = passed === true ? "Pass" : passed === false ? "Fail" : "Not checked";
   return (
-    <div style={{ borderBottom: "1px solid var(--stone-line)", padding: "12px 0" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, color, border: `1px solid ${color}`, padding: "1px 7px" }}>
-          {label}
-        </span>
-        <span style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 600 }}>{meta.title}</span>
+    <div className="check-row">
+      <div className="check-row-head">
+        <span className={`stamp ${stampCls}`}>{label}</span>
+        <span className="check-title">{meta.title}</span>
       </div>
-      <div style={{ fontSize: 12, color: "var(--stone)", marginBottom: 4 }}>{meta.explains}</div>
-      <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-soft)" }}>{result.detail}</div>
+      <div className="check-explains">{meta.explains}</div>
+      <div className="check-detail">{result.detail}</div>
     </div>
   );
 }
@@ -76,15 +74,15 @@ export default function VerifyPage() {
   };
 
   return (
-    <div style={{ maxWidth: 760, margin: "0 auto", padding: "48px 28px 96px" }}>
+    <div className="page page--narrow">
       <header style={{ marginBottom: 28 }}>
-        <div style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--stone)", marginBottom: 6 }}>
+        <div className="eyebrow">
           DPI Sentinel · <a href="#/">back to status page</a>
         </div>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 30, margin: 0, fontWeight: 700 }}>
+        <h1 className="masthead-title" style={{ fontSize: 32 }}>
           Verify an Evidence Certificate
         </h1>
-        <div style={{ fontSize: 13.5, color: "var(--ink-soft)", marginTop: 8, lineHeight: 1.6, maxWidth: 620 }}>
+        <div className="masthead-sub" style={{ maxWidth: 620 }}>
           Paste or upload a certificate file, exactly as it was downloaded. It doesn't matter where the
           file came from or who forwarded it — validity is re-derived from the cryptography, not from
           trusting the sender.
@@ -92,42 +90,26 @@ export default function VerifyPage() {
       </header>
 
       <textarea
+        className="verify-input"
         value={raw}
         onChange={(e) => setRaw(e.target.value)}
         placeholder='{"certificate": { … }, "signature": "…", "aggregator_public_key_hex": "…"}'
         spellCheck={false}
-        style={{
-          width: "100%", minHeight: 180, fontFamily: "var(--font-mono)", fontSize: 11.5,
-          padding: 12, border: "1px solid var(--stone-line)", background: "var(--paper-raised)",
-          color: "var(--ink)", resize: "vertical",
-        }}
       />
-      <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10 }}>
-        <button className="btn-danger" onClick={verify} disabled={busy || !raw.trim()}>
+      <div className="verify-actions">
+        <button className="btn-primary" onClick={verify} disabled={busy || !raw.trim()}>
           {busy ? "Verifying…" : "Verify certificate"}
         </button>
-        <label style={{ fontSize: 12.5, color: "var(--ink-soft)", cursor: "pointer" }}>
+        <label className="verify-upload">
           …or upload the file: <input type="file" accept=".json,application/json" onChange={onFile} />
         </label>
       </div>
 
-      {error && (
-        <div style={{ marginTop: 16, fontSize: 12.5, color: "var(--rust)", border: "1px solid var(--rust)", padding: "10px 12px" }}>
-          {error}
-        </div>
-      )}
+      {error && <div className="copilot-error">{error}</div>}
 
       {result && (
         <section style={{ marginTop: 28 }}>
-          <div
-            style={{
-              display: "inline-flex", alignItems: "center", fontSize: 14, fontWeight: 700,
-              padding: "8px 16px", marginBottom: 12,
-              border: `1px solid ${result.valid ? "var(--green)" : "var(--rust)"}`,
-              color: result.valid ? "var(--green)" : "var(--rust)",
-              background: result.valid ? "var(--green-dim)" : "var(--rust-dim)",
-            }}
-          >
+          <div className={`verdict-banner ${result.valid ? "verdict-banner--valid" : "verdict-banner--invalid"}`}>
             {result.valid
               ? "VALID — every evaluable check passed"
               : `INVALID — failed: ${result.failed_checks.join(", ")}`}
@@ -139,7 +121,7 @@ export default function VerifyPage() {
             )}
           </div>
 
-          <div style={{ marginTop: 14, fontSize: 11.5, color: "var(--stone)", lineHeight: 1.6 }}>
+          <div style={{ marginTop: 16, fontSize: 11.5, color: "var(--stone)", lineHeight: 1.6 }}>
             Verified against aggregator identity{" "}
             <span style={{ fontFamily: "var(--font-mono)" }}>{result.aggregator_public_key_hex?.slice(0, 16)}…</span>.
             A certificate only ever attests that an infrastructure incident was confirmed by witness

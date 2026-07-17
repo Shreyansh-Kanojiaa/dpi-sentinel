@@ -24,19 +24,21 @@ const SEVERITY_COLOR = {
   critical: "var(--rust)",
 };
 
+const SEVERITY_STAMP = {
+  operational: "stamp--green",
+  degraded: "stamp--rust",
+  insufficient_data: "stamp--amber",
+  minor: "stamp--amber",
+  major: "stamp--rust",
+  critical: "stamp--rust",
+};
+
 function StatusDot({ status }) {
   const color = SEVERITY_COLOR[status] || "var(--stone)";
   return (
     <span
-      style={{
-        display: "inline-block",
-        width: 8,
-        height: 8,
-        borderRadius: "50%",
-        background: color,
-        marginRight: 8,
-        boxShadow: status !== "operational" ? `0 0 0 3px ${color}22` : "none",
-      }}
+      className={`status-dot${status !== "operational" ? " status-dot--alert" : ""}`}
+      style={{ "--dot": color }}
     />
   );
 }
@@ -44,24 +46,18 @@ function StatusDot({ status }) {
 function RailRow({ rail, onTrigger, onResolve, expanded, onToggle }) {
   const u = rail.uptime_24h || {};
   return (
-    <div className="rail-row" style={{ borderBottom: "1px solid var(--stone-line)", padding: "20px 0" }}>
-      <div className="rail-row-main" onClick={onToggle}>
+    <div className="rail-row">
+      <div className="rail-main ledger-grid" onClick={onToggle}>
         <div className="rail-chevron">{expanded ? "▾" : "▸"}</div>
 
-        <div className="rail-name">
-          <div style={{ fontFamily: "var(--font-display)", fontSize: 19, fontWeight: 600 }}>
-            {rail.name}
-          </div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--stone)", marginTop: 2 }}>
-            {rail.operator}
-          </div>
+        <div className="rail-cell-name">
+          <div className="rail-name-display">{rail.name}</div>
+          <div className="rail-operator">{rail.operator}</div>
         </div>
 
-        <div className="rail-status">
+        <div className="rail-status" style={{ color: SEVERITY_COLOR[rail.status] || "var(--ink)" }}>
           <StatusDot status={rail.status} />
-          <span style={{ fontSize: 13.5, fontWeight: 500, color: SEVERITY_COLOR[rail.status] || "var(--ink)" }}>
-            {SEVERITY_LABEL[rail.status] || rail.status}
-          </span>
+          {SEVERITY_LABEL[rail.status] || rail.status}
         </div>
 
         <div className="rail-stat">
@@ -78,7 +74,9 @@ function RailRow({ rail, onTrigger, onResolve, expanded, onToggle }) {
           <span className="rail-stat-value">
             {u.avg_simulated_success_rate != null ? `${(u.avg_simulated_success_rate * 100).toFixed(1)}%` : "—"}
           </span>
-          <span className="rail-stat-label">success rate <em style={{ fontStyle: "normal", opacity: 0.7 }}>(sim.)</em></span>
+          <span className="rail-stat-label">
+            success rate <em className="sim-flag" title="Calibrated simulation — not live settlement data">simulated</em>
+          </span>
         </div>
 
         <div className="rail-pulse">
@@ -89,20 +87,16 @@ function RailRow({ rail, onTrigger, onResolve, expanded, onToggle }) {
       {expanded && (
         <div className="rail-expanded">
           <div className="rail-expanded-desc">
-            <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-soft)", marginBottom: 12 }}>
-              {rail.description}
-            </div>
+            {rail.description}
             <div className="methodology-box">
-              <strong style={{ color: "var(--ink-soft)" }}>Methodology —</strong> {rail.probe_methodology}
+              <strong>Methodology —</strong> {rail.probe_methodology}
               <br />
-              <span style={{ opacity: 0.8 }}>target: {rail.probe_target}</span>
+              <span className="target">target: {rail.probe_target}</span>
             </div>
           </div>
 
           <div className="rail-expanded-controls">
-            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--stone)", marginBottom: 8 }}>
-              Demo controls
-            </div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>Demo controls</div>
             <button
               onClick={(e) => { e.stopPropagation(); onTrigger(rail.slug); }}
               className="btn-danger"
@@ -134,57 +128,31 @@ function IncidentEntry({ incident }) {
     <div className="incident-entry">
       <div className="incident-date">
         {dateStr}
-        {incident.is_historical && (
-          <div style={{ marginTop: 4, color: "var(--blue)", fontWeight: 600 }}>HISTORICAL</div>
-        )}
-        {incident.is_live_simulation && (
-          <div style={{ marginTop: 4, color: "var(--rust)", fontWeight: 600 }}>LIVE DEMO</div>
-        )}
+        {incident.is_historical && <span className="stamp stamp--blue stamp--tilt">Historical</span>}
+        {incident.is_live_simulation && <span className="stamp stamp--rust stamp--tilt">Live demo</span>}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-          <span
-            style={{
-              fontSize: 10.5,
-              fontWeight: 700,
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-              color: SEVERITY_COLOR[incident.severity] || "var(--ink)",
-              border: `1px solid ${SEVERITY_COLOR[incident.severity] || "var(--stone)"}`,
-              padding: "1px 6px",
-            }}
-          >
+        <div className="incident-head">
+          <span className={`stamp ${SEVERITY_STAMP[incident.severity] || ""}`}>
             {incident.severity}
           </span>
-          <span
-            style={{
-              fontSize: 10.5,
-              color: "var(--stone)",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            {incident.status}
-          </span>
-          <span style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 600 }}>
-            {incident.title}
-          </span>
+          <span className="incident-status">{incident.status}</span>
+          <span className="incident-title">{incident.title}</span>
         </div>
 
-        <div style={{ marginLeft: 2, borderLeft: "2px solid var(--stone-line)", paddingLeft: 14 }}>
+        <div className="incident-timeline">
           {incident.events.map((e, i) => (
-            <div key={i} style={{ marginBottom: 8, fontSize: 12.5, lineHeight: 1.55 }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--stone)", marginRight: 8 }}>
+            <div key={i} className="incident-event">
+              <time>
                 {new Date(e.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-              </span>
-              <strong style={{ fontWeight: 600 }}>{e.label}.</strong> {e.narrative}
+              </time>
+              <strong>{e.label}.</strong> {e.narrative}
             </div>
           ))}
         </div>
 
         {incident.source_note && (
-          <div style={{ marginTop: 8, fontSize: 11, color: "var(--stone)", fontStyle: "italic", lineHeight: 1.5 }}>
-            Source note: {incident.source_note}
-          </div>
+          <div className="incident-source">Source note: {incident.source_note}</div>
         )}
       </div>
     </div>
@@ -254,76 +222,78 @@ export default function App() {
     ? "partial"
     : "ok";
 
+  const OVERALL = {
+    ok: { cls: "stamp--green", dot: "operational", label: "All rails operational", note: null },
+    partial: {
+      cls: "stamp--amber",
+      dot: "insufficient_data",
+      label: "Limited witness coverage",
+      note: "insufficient data — not a confirmed disruption",
+    },
+    issue: { cls: "stamp--rust", dot: "degraded", label: "Active disruption", note: "confirmed by witness quorum" },
+  }[overallStatus];
+
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto", padding: "48px 28px 96px" }}>
+    <div className="page">
       {/* Masthead */}
-      <header style={{ marginBottom: 40 }}>
+      <header style={{ marginBottom: 44 }}>
         <div className="masthead">
           <div>
-            <div style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--stone)", marginBottom: 6 }}>
+            <div className="eyebrow">
               An independent register · not affiliated with NPCI, MeitY, or UIDAI
             </div>
-            <h1 style={{ fontFamily: "var(--font-display)", fontSize: 38, margin: 0, lineHeight: 1.1, fontWeight: 700 }}>
-              DPI Sentinel
-            </h1>
-            <div style={{ fontSize: 14, color: "var(--ink-soft)", marginTop: 6, maxWidth: 520 }}>
+            <h1 className="masthead-title">DPI Sentinel</h1>
+            <div className="masthead-sub">
               A public ledger of uptime for the digital rails India depends on. UPI alone moves over
               22 billion transactions a month — no independent, real-time monitor exists for it.
             </div>
           </div>
           <div className="masthead-status">
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                fontSize: 12.5,
-                fontWeight: 600,
-                padding: "5px 12px",
-                border: `1px solid ${
-                  overallStatus === "ok" ? "var(--green)" : overallStatus === "partial" ? "var(--amber)" : "var(--rust)"
-                }`,
-                color: overallStatus === "ok" ? "var(--green)" : overallStatus === "partial" ? "var(--amber)" : "var(--rust)",
-              }}
-            >
-              <StatusDot status={overallStatus === "ok" ? "operational" : overallStatus === "partial" ? "insufficient_data" : "degraded"} />
-              {overallStatus === "ok"
-                ? "All monitored rails operational"
-                : overallStatus === "partial"
-                ? "Limited witness coverage — not a confirmed disruption"
-                : "Active disruption detected"}
-            </div>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--stone)", marginTop: 8 }}>
-              {lastUpdated ? `updated ${lastUpdated.toLocaleTimeString("en-IN")}` : "connecting…"}
+            <span className={`stamp ${OVERALL.cls}`}>
+              <StatusDot status={OVERALL.dot} />
+              {OVERALL.label}
+            </span>
+            {OVERALL.note && (
+              <div style={{ fontSize: 11, color: "var(--stone)", marginTop: 7 }}>{OVERALL.note}</div>
+            )}
+            <div className="masthead-updated">
+              {lastUpdated ? (
+                <>
+                  <span className="live-tick" />
+                  updated {lastUpdated.toLocaleTimeString("en-IN")}
+                </>
+              ) : (
+                "connecting…"
+              )}
             </div>
           </div>
         </div>
       </header>
 
       {error && (
-        <div style={{ background: "var(--rust-dim)", border: "1px solid var(--rust)", padding: 12, fontSize: 13, marginBottom: 24 }}>
+        <div className="error-banner">
           Could not reach the monitoring backend ({error}). Is the FastAPI server running on port 8420?
         </div>
       )}
 
       {/* Rail ledger */}
       <section style={{ marginBottom: 56 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-            marginBottom: 4,
-          }}
-        >
-          <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 600, margin: 0 }}>
-            Monitored rails
-          </h2>
-          <span style={{ fontSize: 11.5, color: "var(--stone)", fontFamily: "var(--font-mono)" }}>
-            click a row to expand · {rails.length} monitored
-          </span>
+        <div className="ledger-header">
+          <h2 className="section-title">Monitored rails</h2>
+          <span className="ledger-note">click a row to expand · {rails.length} monitored</span>
         </div>
 
-        <div style={{ marginTop: 12 }}>
+        <div className="ledger-grid ledger-cols">
+          <div />
+          <div>Rail</div>
+          <div>Quorum status</div>
+          <div>Avail · 24h</div>
+          <div>Latency</div>
+          <div>Success (sim.)</div>
+          <div className="col-signal">Signal · live probes</div>
+        </div>
+
+        <div>
           {rails.map((rail) => (
             <RailRow
               key={rail.slug}
@@ -338,11 +308,9 @@ export default function App() {
       </section>
 
       {/* Incident log */}
-      <section style={{ marginBottom: 48 }}>
-        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 600, marginBottom: 4 }}>
-          Incident log
-        </h2>
-        <div style={{ fontSize: 12.5, color: "var(--stone)", marginBottom: 16 }}>
+      <section style={{ marginBottom: 52 }}>
+        <h2 className="section-title" style={{ marginBottom: 4 }}>Incident log</h2>
+        <div style={{ fontSize: 12.5, color: "var(--stone)", marginBottom: 14 }}>
           Live-detected incidents, alongside historical incidents reconstructed from public reporting.
         </div>
         <div>
@@ -357,25 +325,18 @@ export default function App() {
       </section>
 
       {/* Why this exists */}
-      <section
-        style={{
-          background: "var(--paper-raised)",
-          border: "1px solid var(--stone-line)",
-          padding: "24px 28px",
-          marginBottom: 40,
-        }}
-      >
-        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 600, marginTop: 0, marginBottom: 10 }}>
+      <section className="why-panel">
+        <h2 className="section-title" style={{ fontSize: 18, marginBottom: 12 }}>
           Why an independent register
         </h2>
-        <div style={{ fontSize: 13, lineHeight: 1.65, color: "var(--ink-soft)" }} className="why-grid">
-          <p style={{ margin: 0 }}>
+        <div className="why-grid">
+          <p>
             India's digital public infrastructure now clears more transactions in a month than most
             countries see in a year. When it degrades — as UPI did for roughly five hours on 12 April
             2025 — citizens find out from social media, not a dashboard. NPCI's own uptime reporting
             updates monthly; no cross-rail, real-time, independently operated monitor exists today.
           </p>
-          <p style={{ margin: 0 }}>
+          <p>
             DPI Sentinel measures what's honestly measurable from outside — public-surface availability
             and latency, in real time — and is explicit about what it can't see: real transaction
             settlement, which lives inside banks and PSPs. We'd rather show a transparent simulation
@@ -384,8 +345,8 @@ export default function App() {
         </div>
       </section>
 
-      <footer style={{ paddingTop: 18, borderTop: "1px solid var(--stone-line)", fontSize: 11.5, color: "var(--stone)", lineHeight: 1.6 }}>
-        <div style={{ marginBottom: 10 }}>
+      <footer className="site-footer">
+        <div className="verify-link">
           Holding an Evidence Certificate? <a href="#/verify">Verify it independently →</a>
         </div>
         DPI Sentinel is an independent, non-commercial research project, built for the SIPS 2026 summit.

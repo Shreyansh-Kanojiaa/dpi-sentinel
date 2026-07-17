@@ -2,11 +2,12 @@ import React from "react";
 
 /**
  * Renders the last N probe points as a pulse strip: a thin horizontal
- * line that traces the simulated success rate, with injected/incident
- * points marked. Designed to read like a seismograph or ECG strip rather
- * than a dashboard chart — this is the signature visual element.
+ * line that traces the simulated success rate, drawn over a faint
+ * strip-chart graticule. Designed to read like a seismograph or ECG
+ * strip rather than a dashboard chart — this is the signature visual
+ * element.
  */
-export default function PulseStrip({ points = [], color = "#1A7A5E", height = 40, width = 220 }) {
+export default function PulseStrip({ points = [], color = "#17694E", height = 40, width = 220 }) {
   if (!points.length) {
     return (
       <div
@@ -46,9 +47,19 @@ export default function PulseStrip({ points = [], color = "#1A7A5E", height = 40
     .join(" ");
 
   const hasIncident = padded.some((p) => p.injected);
+  const strokeColor = hasIncident ? "var(--rust)" : color;
+  const last = padded[n - 1];
+
+  // Vertical graticule ticks every ~28px, like the timing marks on a
+  // strip-chart recorder's paper feed.
+  const ticks = [];
+  for (let x = 28; x < width; x += 28) ticks.push(x);
 
   return (
     <svg width={width} height={height} role="img" aria-label="recent probe history">
+      {ticks.map((x) => (
+        <line key={x} x1={x} x2={x} y1={0} y2={height} stroke="var(--stone-line)" strokeWidth={0.5} opacity={0.6} />
+      ))}
       {/* baseline reference at 98.5% threshold */}
       <line
         x1={0}
@@ -62,7 +73,7 @@ export default function PulseStrip({ points = [], color = "#1A7A5E", height = 40
       <path
         d={pathD}
         fill="none"
-        stroke={hasIncident ? "var(--rust)" : color}
+        stroke={strokeColor}
         strokeWidth={1.6}
         strokeLinejoin="round"
         strokeLinecap="round"
@@ -72,6 +83,8 @@ export default function PulseStrip({ points = [], color = "#1A7A5E", height = 40
           <circle key={i} cx={i * stepX} cy={toY(p.rate)} r={2.2} fill="var(--rust)" />
         ) : null
       )}
+      {/* pen head — where the recorder is writing right now */}
+      <circle cx={width - 2.5} cy={toY(last.rate)} r={2.4} fill={strokeColor} />
     </svg>
   );
 }

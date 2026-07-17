@@ -34,42 +34,40 @@ function CertificateResult({ bundle }) {
   const fmt = (iso) => (iso ? new Date(iso + (iso.endsWith("Z") ? "" : "Z")).toLocaleString("en-IN") : null);
 
   const row = (label, value) => (
-    <div style={{ display: "flex", gap: 12, padding: "5px 0", borderBottom: "1px solid var(--stone-line)", fontSize: 12.5 }}>
-      <div style={{ width: 170, flexShrink: 0, color: "var(--stone)", fontFamily: "var(--font-mono)", fontSize: 11 }}>{label}</div>
-      <div style={{ minWidth: 0, overflowWrap: "anywhere" }}>{value}</div>
+    <div className="cert-row">
+      <div className="cert-row-label">{label}</div>
+      <div className="cert-row-value">{value}</div>
     </div>
   );
 
   return (
-    <div style={{ marginTop: 14, border: "1px solid var(--green)", background: "var(--green-dim)", padding: "16px 18px" }}>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
-        Evidence Certificate issued
-      </div>
-      <div style={{ fontSize: 12, color: "var(--ink-soft)", marginBottom: 10 }}>
+    <div className="cert-result">
+      <span className="stamp stamp--green stamp--tilt stamp--in">Certificate issued</span>
+      <div style={{ fontSize: 12, color: "var(--ink-soft)", margin: "10px 0 2px", lineHeight: 1.55 }}>
         Signed by the aggregator's Ed25519 identity. Download the bundle below — that file is what you
         forward to your bank or the ombudsman, and anyone can independently verify it on the{" "}
         <a href="#/verify">verify page</a>.
       </div>
 
-      {row("certificate id", <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{cert.certificate_id}</span>)}
-      {row("rail", `${cert.rail.name} (${cert.rail.operator})`)}
-      {row("incident window", `${fmt(cert.incident_window.started_at)} → ${cert.incident_window.ongoing ? "ongoing" : fmt(cert.incident_window.resolved_at)}`)}
-      {row("witness quorum", q.reporting_count != null
-        ? `${(q.unhealthy_witness_ids || []).length} of ${q.reporting_count} reporting witnesses (${(q.unhealthy_witness_ids || []).join(", ")}) marked the rail unhealthy`
-        : "—")}
-      {row("your claimed time", fmt(cert.claimed_timestamp))}
-      {row("your transaction ref", cert.claimed_transaction_ref.value
-        ? <span>{cert.claimed_transaction_ref.value}{" "}
-            <em style={{ color: "var(--rust)", fontStyle: "normal", fontSize: 11 }}>· self-reported, unverified</em></span>
-        : <em style={{ color: "var(--stone)" }}>none provided</em>)}
-      {row("cryptographic evidence", `${proven} of ${total} incident log entries carry Merkle inclusion proofs to a signed, git-anchored checkpoint${proven < total ? " (the rest await the next checkpoint)" : ""}`)}
-      {row("signature", <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5 }}>{bundle.signature.slice(0, 32)}…</span>)}
-
-      <div style={{ marginTop: 10, fontSize: 11.5, lineHeight: 1.55, color: "var(--ink-soft)", borderLeft: "3px solid var(--amber)", paddingLeft: 10 }}>
-        {cert.disclaimer}
+      <div className="cert-rows">
+        {row("certificate id", <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{cert.certificate_id}</span>)}
+        {row("rail", `${cert.rail.name} (${cert.rail.operator})`)}
+        {row("incident window", `${fmt(cert.incident_window.started_at)} → ${cert.incident_window.ongoing ? "ongoing" : fmt(cert.incident_window.resolved_at)}`)}
+        {row("witness quorum", q.reporting_count != null
+          ? `${(q.unhealthy_witness_ids || []).length} of ${q.reporting_count} reporting witnesses (${(q.unhealthy_witness_ids || []).join(", ")}) marked the rail unhealthy`
+          : "—")}
+        {row("your claimed time", fmt(cert.claimed_timestamp))}
+        {row("your transaction ref", cert.claimed_transaction_ref.value
+          ? <span>{cert.claimed_transaction_ref.value}{" "}
+              <em style={{ color: "var(--rust)", fontStyle: "normal", fontSize: 11 }}>· self-reported, unverified</em></span>
+          : <em style={{ color: "var(--stone)" }}>none provided</em>)}
+        {row("cryptographic evidence", `${proven} of ${total} incident log entries carry Merkle inclusion proofs to a signed, git-anchored checkpoint${proven < total ? " (the rest await the next checkpoint)" : ""}`)}
+        {row("signature", <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5 }}>{bundle.signature.slice(0, 32)}…</span>)}
       </div>
 
-      <button className="btn-danger" style={{ marginTop: 12 }} onClick={() => downloadBundle(bundle)}>
+      <div className="cert-disclaimer">{cert.disclaimer}</div>
+
+      <button className="btn-primary" style={{ marginTop: 14 }} onClick={() => downloadBundle(bundle)}>
         Download certificate (JSON)
       </button>
     </div>
@@ -104,15 +102,10 @@ export default function OutageCopilot({ rail }) {
   };
 
   return (
-    <div
-      onClick={(e) => e.stopPropagation()}
-      style={{ margin: "4px 0 8px 26px", border: "1px solid var(--rust)", background: "var(--rust-dim)", padding: "16px 18px" }}
-    >
-      <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rust)", fontWeight: 700, marginBottom: 8 }}>
-        Outage copilot — {rail.name} is degraded right now
-      </div>
+    <div className="copilot" onClick={(e) => e.stopPropagation()}>
+      <div className="copilot-title">Outage copilot — {rail.name} is degraded right now</div>
 
-      <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--ink)", display: "grid", gap: 8 }}>
+      <div className="copilot-steps">
         <div>
           <strong>Don't retry the payment immediately.</strong> During an infrastructure incident,
           retries pile onto an already struggling system and can leave you with multiple pending
@@ -123,7 +116,7 @@ export default function OutageCopilot({ rail }) {
           app or look for the debit SMS, not the UPI app's spinner. A "failed" screen with a real
           debit usually auto-reverses; note the time and transaction reference if it doesn't.
         </div>
-        <div style={{ borderLeft: "3px solid var(--rust)", paddingLeft: 10 }}>
+        <div className="copilot-scam">
           <strong>Scam warning:</strong> outage windows are prime time for fake "UPI helpline" calls.
           NPCI and your bank will not call you to "reverse a stuck transaction" or ask for your UPI
           PIN, OTP, or a screen-share. If someone calls you about this outage unprompted, hang up.
@@ -131,42 +124,40 @@ export default function OutageCopilot({ rail }) {
       </div>
 
       {!bundle && !showForm && (
-        <button className="btn-danger" style={{ marginTop: 14 }} onClick={() => setShowForm(true)}>
+        <button className="btn-primary" style={{ marginTop: 14 }} onClick={() => setShowForm(true)}>
           Request Evidence Certificate
         </button>
       )}
 
       {showForm && !bundle && (
-        <form onSubmit={submit} style={{ marginTop: 14, display: "grid", gap: 10, maxWidth: 440 }}>
-          <div style={{ fontSize: 12, color: "var(--ink-soft)" }}>
+        <form onSubmit={submit} className="copilot-form">
+          <div className="copilot-form-note">
             A signed, verifiable record that this incident was confirmed by independent witness
             quorum — usable as supporting evidence in a bank dispute or RBI ombudsman complaint.
           </div>
-          <label style={{ fontSize: 12 }}>
+          <label>
             Rail
-            <input value={`${rail.name} (${rail.slug})`} disabled style={{ display: "block", width: "100%", marginTop: 4 }} />
+            <input value={`${rail.name} (${rail.slug})`} disabled />
           </label>
-          <label style={{ fontSize: 12 }}>
+          <label>
             Approximate time your transaction failed
             <input
               type="datetime-local"
               required
               value={claimedTime}
               onChange={(e) => setClaimedTime(e.target.value)}
-              style={{ display: "block", width: "100%", marginTop: 4 }}
             />
           </label>
-          <label style={{ fontSize: 12 }}>
+          <label>
             Transaction reference (optional — recorded as self-reported, not verified)
             <input
               value={txnRef}
               onChange={(e) => setTxnRef(e.target.value)}
               placeholder="e.g. UPI ref no. from your app"
-              style={{ display: "block", width: "100%", marginTop: 4 }}
             />
           </label>
           <div style={{ display: "flex", gap: 8 }}>
-            <button type="submit" className="btn-danger" disabled={busy}>
+            <button type="submit" className="btn-primary" disabled={busy}>
               {busy ? "Requesting…" : "Issue certificate"}
             </button>
             <button type="button" className="btn-ghost" onClick={() => setShowForm(false)}>Cancel</button>
@@ -174,11 +165,7 @@ export default function OutageCopilot({ rail }) {
         </form>
       )}
 
-      {error && (
-        <div style={{ marginTop: 10, fontSize: 12, color: "var(--rust)", border: "1px solid var(--rust)", padding: "8px 10px" }}>
-          {error}
-        </div>
-      )}
+      {error && <div className="copilot-error">{error}</div>}
 
       {bundle && <CertificateResult bundle={bundle} />}
     </div>
