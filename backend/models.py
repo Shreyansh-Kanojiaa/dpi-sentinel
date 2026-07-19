@@ -12,7 +12,8 @@ Core entities:
 
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, JSON
+    Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, JSON,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -48,6 +49,33 @@ class Witness(Base):
     last_seen_at = Column(DateTime, nullable=True)               # updated on each accepted observation
 
     probes = relationship("ProbeResult", back_populates="witness")
+
+
+class WitnessRailAssignment(Base):
+    """
+    Milestone 5 — explicit witness-to-rail assignment.
+
+    The source of truth for "which witnesses are supposed to cover this
+    rail," independent of whether any particular witness is currently
+    healthy or reporting. This is what quorum.py now divides by for a
+    rail's participation denominator, replacing the old global
+    "every registered witness" count — see quorum.py's module docstring.
+
+    Rows here are (re)synced by registry.py at every aggregator startup
+    from each witness's declared targets (fetched alongside its pubkey),
+    matched against Rail.probe_target the same way POST /observations
+    routes incoming observations. This is registration-time, declarative
+    assignment — never inferred from which witnesses happened to report
+    recently, so a witness that's merely down still counts as "assigned."
+    """
+    __tablename__ = "witness_rail_assignments"
+
+    id = Column(Integer, primary_key=True)
+    witness_id = Column(Integer, ForeignKey("witnesses.id"), nullable=False)
+    rail_id = Column(Integer, ForeignKey("rails.id"), nullable=False)
+    assigned_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("witness_id", "rail_id", name="uq_witness_rail_assignment"),)
 
 
 class ProbeResult(Base):

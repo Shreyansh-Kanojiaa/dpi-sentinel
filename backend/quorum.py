@@ -8,10 +8,21 @@ within a recent time window.
 
 Two separate fractions, checked in order, on purpose:
 
-  1. Participation: did enough registered witnesses report recently
-     enough to say anything at all? If not: "insufficient_data" — we
-     explicitly refuse to default to "operational" just because nobody
-     complained. Silence from witnesses is not evidence of health.
+  1. Participation: did enough ASSIGNED witnesses report recently enough
+     to say anything at all? If not: "insufficient_data" — we explicitly
+     refuse to default to "operational" just because nobody complained.
+     Silence from witnesses is not evidence of health.
+
+     (Milestone 5: the denominator is witnesses assigned to THIS rail,
+     via the WitnessRailAssignment table — not the total count of every
+     registered witness across all rails. The old global-count denominator
+     meant a rail covered by only a subset of witnesses could never clear
+     MIN_PARTICIPATION_FRACTION, no matter how healthy that subset was
+     [historically this is exactly what left DigiLocker permanently at
+     insufficient_data]. Per-rail assignment is the actual fix — it's not
+     a detail, it's the point of this milestone. See registry.py's
+     _sync_rail_assignments for how the table gets populated.)
+
   2. Agreement: of the witnesses that DID report, do enough of them
      agree the rail is unhealthy? This is only meaningful to ask once
      participation has already cleared the first bar.
@@ -32,7 +43,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from models import Rail, Witness, ProbeResult, Incident, IncidentEvent
+from models import Rail, Witness, ProbeResult, Incident, IncidentEvent, WitnessRailAssignment
 import log_chain
 
 MIN_PARTICIPATION_FRACTION = float(os.environ.get("MIN_PARTICIPATION_FRACTION", "0.66"))
@@ -54,7 +65,13 @@ def compute_quorum_snapshot(db: Session, rail: Rail, now: datetime | None = None
     now = now or datetime.utcnow()
     since = now - timedelta(seconds=WINDOW_SECONDS)
 
-    total_registered = db.query(Witness).count()
+    total_registered = db.query(Witness).count()  # informational only; not the denominator (see below)
+
+    assigned_witness_ids = {
+        row.witness_id
+        for row in db.query(WitnessRailAssignment.witness_id).filter(WitnessRailAssignment.rail_id == rail.id).all()
+    }
+    assigned_count = len(assigned_witness_ids)
 
     rows = (
         db.query(ProbeResult)
@@ -74,7 +91,10 @@ def compute_quorum_snapshot(db: Session, rail: Rail, now: datetime | None = None
         latest_by_witness_id[row.witness_id] = row
 
     reporting_count = len(latest_by_witness_id)
-    participation_fraction = (reporting_count / total_registered) if total_registered else 0.0
+    # assigned_count is the Milestone 5 denominator — witnesses ASSIGNED to
+    # this rail, not every registered witness (see module docstring). Guard
+    # the zero case explicitly: 0/0 must never read as "fine."
+    participation_fraction = (reporting_count / assigned_count) if assigned_count else 0.0
 
     # Resolved regardless of which branch we take below — the receipt should
     # always show WHO reported, even when that's not enough for quorum.
@@ -84,16 +104,29 @@ def compute_quorum_snapshot(db: Session, rail: Rail, now: datetime | None = None
     snapshot = {
         "computed_at": now.isoformat(),
         "window_seconds": WINDOW_SECONDS,
+        "assigned_count": assigned_count,
         "total_registered": total_registered,
         "min_participation_fraction": MIN_PARTICIPATION_FRACTION,
         "agreement_supermajority_fraction": AGREEMENT_SUPERMAJORITY_FRACTION,
         "reporting_count": reporting_count,
         "participation_fraction": round(participation_fraction, 4),
         "reporting_witness_ids": reporting_witness_ids,
+        "reason": None,
     }
 
-    if total_registered == 0 or participation_fraction < MIN_PARTICIPATION_FRACTION:
+    if assigned_count == 0:
         snapshot["status"] = "insufficient_data"
+        snapshot["reason"] = "no witnesses assigned"
+        snapshot["unhealthy_witness_ids"] = []
+        snapshot["agreement_fraction"] = None
+        return snapshot
+
+    if participation_fraction < MIN_PARTICIPATION_FRACTION:
+        snapshot["status"] = "insufficient_data"
+        snapshot["reason"] = (
+            f"only {reporting_count}/{assigned_count} assigned witnesses reporting "
+            f"(need ≥{MIN_PARTICIPATION_FRACTION:.0%})"
+        )
         snapshot["unhealthy_witness_ids"] = []
         snapshot["agreement_fraction"] = None
         return snapshot

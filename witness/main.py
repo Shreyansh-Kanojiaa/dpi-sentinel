@@ -78,18 +78,15 @@ def parse_probe_targets(raw: str) -> list[tuple[str, str]]:
     return targets
 
 
-# Every witness currently probes every configured target — there is no
-# per-witness subset. This is a deliberate, documented simplification (see
-# CLAUDE.md / docker-compose.yml): the aggregator's participation math is
-# reporting_witnesses_for_this_rail / total_registered_witnesses, a GLOBAL
-# denominator, so a rail only clears quorum if (close to) every registered
-# witness also covers it — a rail watched by a strict subset of witnesses
-# can never reach the participation threshold. Giving every witness every
-# target sidesteps that without touching the denominator math. The correct
-# long-term fix is an explicit witness-to-rail assignment (so participation
-# is computed per-rail-covering-witness-count, not global witness count) —
-# deferred post-hackathon; this is the contained fix for the submission
-# window.
+# A witness may cover any subset of rails via PROBE_TARGETS (Milestone 5).
+# Earlier this had to be every rail, because the aggregator's participation
+# math divided by the total registered witness count, a GLOBAL denominator —
+# a rail watched by a strict subset of witnesses could never clear quorum.
+# That's fixed now: registry.py records each witness's declared targets
+# (below, surfaced via GET /pubkey) as WitnessRailAssignment rows, and
+# quorum.py divides by witnesses ASSIGNED to a rail, not all registered
+# witnesses. This file doesn't need to know that — it just declares what it
+# probes, same as before.
 PROBE_TARGETS = parse_probe_targets(os.environ.get("PROBE_TARGETS", ""))
 
 signing_key = load_or_create_signing_key(KEY_PATH)
@@ -148,7 +145,16 @@ app = FastAPI(title=f"DPI Sentinel Witness ({WITNESS_ID})", lifespan=lifespan)
 
 @app.get("/pubkey")
 def get_pubkey():
-    return {"witness_id": WITNESS_ID, "public_key_hex": public_key_hex}
+    # Milestone 5: targets are included here, not just at /health, because
+    # this is the endpoint the aggregator's registry.py fetches at startup
+    # to build BOTH the trusted-key registry AND (new) the
+    # WitnessRailAssignment rows — registration and rail-coverage
+    # declaration happen in the same out-of-band fetch.
+    return {
+        "witness_id": WITNESS_ID,
+        "public_key_hex": public_key_hex,
+        "targets": [{"label": label, "url": url} for label, url in PROBE_TARGETS],
+    }
 
 
 @app.get("/health")

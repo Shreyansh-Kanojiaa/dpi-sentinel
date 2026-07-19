@@ -34,7 +34,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from models import Base, Rail, Witness, Incident, ProbeResult, LogEntry, Checkpoint
+from models import Base, Rail, Witness, Incident, ProbeResult, LogEntry, Checkpoint, WitnessRailAssignment
 from rails_config import seed_rails
 from historical_seed import seed_historical_incidents
 from probe_engine import engine as probe_engine
@@ -169,6 +169,10 @@ def serialize_rail(db, rail: Rail) -> dict:
         "color": rail.color,
         "status": snapshot["status"],
         "quorum": snapshot,
+        # Milestone 5: makes "a witness is down" visually distinct from "no
+        # witness was ever assigned" without digging into the quorum object —
+        # e.g. "2/3 assigned witnesses reporting".
+        "witness_coverage": f"{snapshot['reporting_count']}/{snapshot['assigned_count']} assigned witnesses reporting",
         "active_incident_id": open_incident.id if open_incident else None,
         "uptime_24h": uptime,
     }
@@ -479,6 +483,37 @@ def get_unmatched_targets():
     not to this endpoint.
     """
     return unmatched_targets.snapshot()
+
+
+@app.get("/api/diagnostics/witness-assignments")
+def get_witness_assignments():
+    """
+    Milestone 5 — the WitnessRailAssignment table made visible: which
+    witnesses are recorded as assigned to which rails, and when that
+    assignment was (re)synced by registry.py at aggregator startup. This is
+    declarative coverage, independent of whether a witness is currently up
+    or reporting — cross-reference against a rail's "witness_coverage"
+    string in GET /api/rails to see assigned-vs-currently-reporting.
+    """
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(WitnessRailAssignment, Witness, Rail)
+            .join(Witness, WitnessRailAssignment.witness_id == Witness.id)
+            .join(Rail, WitnessRailAssignment.rail_id == Rail.id)
+            .order_by(Rail.slug, Witness.slug)
+            .all()
+        )
+        return [
+            {
+                "witness_slug": w.slug,
+                "rail_slug": r.slug,
+                "assigned_at": a.assigned_at.isoformat(),
+            }
+            for a, w, r in rows
+        ]
+    finally:
+        db.close()
 
 
 class CertificateRequest(BaseModel):
