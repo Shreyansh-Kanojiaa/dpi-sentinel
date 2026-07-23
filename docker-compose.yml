@@ -14,6 +14,19 @@ services:
     environment:
       DB_URL: sqlite:////app/data/dpi_sentinel.db
       WITNESS_URLS: http://witness-a:8500,http://witness-b:8500,http://witness-c:8500,http://witness-d:8500
+      # Registry retry/backoff for fetching each witness's /pubkey at aggregator
+      # startup (registry.py). build_registry is awaited before main.py's lifespan
+      # yield, so the ENTIRE aggregator (every endpoint) is unreachable until every
+      # configured witness's fetch resolves, including full retry/backoff for any
+      # that are down. Tuned so a genuinely unreachable witness caps that blocking
+      # window at ~20-30s (3 attempts x 5s hardcoded per-request timeout + 12s
+      # backoff) instead of the ~2.5min the untuned defaults (10/1/15) produced,
+      # while still leaving ~12s of real recovery time (the backoff sum, since a
+      # not-yet-listening container fails near-instantly rather than timing out)
+      # for a witness that's merely slow to boot on a loaded laptop cold start.
+      WITNESS_REGISTRY_MAX_ATTEMPTS: "3"
+      WITNESS_REGISTRY_BACKOFF_BASE_SECONDS: "4"
+      WITNESS_REGISTRY_BACKOFF_CAP_SECONDS: "8"
       MIN_PARTICIPATION_FRACTION: "0.66"
       AGREEMENT_SUPERMAJORITY_FRACTION: "0.6"
       WINDOW_SECONDS: "60"

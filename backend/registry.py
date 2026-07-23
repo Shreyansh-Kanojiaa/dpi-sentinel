@@ -97,12 +97,18 @@ def _sync_rail_assignments(db: Session, witness: Witness, targets: list[dict]) -
         for a in db.query(WitnessRailAssignment).filter_by(witness_id=witness.id).all()
     }
     now = datetime.utcnow()
-    for rail_id in matched_rail_ids:
-        if rail_id not in existing_by_rail_id:
-            db.add(WitnessRailAssignment(witness_id=witness.id, rail_id=rail_id, assigned_at=now))
-    for rail_id, assignment in existing_by_rail_id.items():
-        if rail_id not in matched_rail_ids:
-            db.delete(assignment)
+    added_rail_ids = matched_rail_ids - existing_by_rail_id.keys()
+    removed_rail_ids = existing_by_rail_id.keys() - matched_rail_ids
+    for rail_id in added_rail_ids:
+        db.add(WitnessRailAssignment(witness_id=witness.id, rail_id=rail_id, assigned_at=now))
+    for rail_id in removed_rail_ids:
+        db.delete(existing_by_rail_id[rail_id])
+
+    logger.info(
+        "witness registry: %s reachable — rail assignments synced (%d assigned total, "
+        "%d added, %d removed)",
+        witness.slug, len(matched_rail_ids), len(added_rail_ids), len(removed_rail_ids),
+    )
 
 
 async def build_registry(db: Session, witness_urls: list[str]):
@@ -117,6 +123,25 @@ async def build_registry(db: Session, witness_urls: list[str]):
     registered = 0
     for base_url, result in zip(witness_urls, results):
         if result is None:
+            # Unreachable this cycle (see _fetch_pubkey_with_retry) — do NOT touch
+            # this witness's row or its WitnessRailAssignment rows. Only a
+            # successful /pubkey fetch with an explicit target list may add or
+            # remove assignments (_sync_rail_assignments); an inability to ask
+            # is never treated as "declared zero targets."
+            existing = db.query(Witness).filter_by(base_url=base_url).first()
+            if existing:
+                preserved = db.query(WitnessRailAssignment).filter_by(witness_id=existing.id).count()
+                logger.warning(
+                    "witness registry: %s (%s) unreachable this sync cycle — "
+                    "leaving its existing %d rail assignment(s) untouched",
+                    existing.slug, base_url, preserved,
+                )
+            else:
+                logger.warning(
+                    "witness registry: %s unreachable this sync cycle and has no prior "
+                    "registration — no rail assignments to preserve or create",
+                    base_url,
+                )
             continue
         slug, public_key_hex, targets = result
         existing = db.query(Witness).filter_by(slug=slug).first()
