@@ -43,7 +43,7 @@ function StatusDot({ status }) {
   );
 }
 
-function RailRow({ rail, onTrigger, onResolve, expanded, onToggle }) {
+function RailRow({ rail, expanded, onToggle }) {
   const u = rail.uptime_24h || {};
   return (
     <div className="rail-row">
@@ -93,22 +93,6 @@ function RailRow({ rail, onTrigger, onResolve, expanded, onToggle }) {
               <br />
               <span className="target">target: {rail.probe_target}</span>
             </div>
-          </div>
-
-          <div className="rail-expanded-controls">
-            <div className="eyebrow" style={{ marginBottom: 8 }}>Demo controls</div>
-            <button
-              onClick={(e) => { e.stopPropagation(); onTrigger(rail.slug); }}
-              className="btn-danger"
-            >
-              Inject simulated outage
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onResolve(rail.slug); }}
-              className="btn-ghost"
-            >
-              Resolve
-            </button>
           </div>
         </div>
       )}
@@ -195,15 +179,6 @@ export default function App() {
     const id = setInterval(refresh, 4000);
     return () => clearInterval(id);
   }, [refresh]);
-
-  const handleTrigger = async (slug) => {
-    await api.triggerOutage(slug, 0.4);
-    setTimeout(refresh, 500);
-  };
-  const handleResolve = async (slug) => {
-    await api.resolveOutage(slug);
-    setTimeout(refresh, 500);
-  };
 
   // After all hooks (rules of hooks), branch to the verify page if routed there.
   if (route.startsWith("#/verify")) {
@@ -300,8 +275,6 @@ export default function App() {
               rail={rail}
               expanded={expandedSlug === rail.slug}
               onToggle={() => setExpandedSlug(expandedSlug === rail.slug ? null : rail.slug)}
-              onTrigger={handleTrigger}
-              onResolve={handleResolve}
             />
           ))}
         </div>

@@ -6,12 +6,6 @@ async function getJSON(path) {
   return res.json();
 }
 
-async function postJSON(path) {
-  const res = await fetch(`${API_BASE}${path}`, { method: "POST" });
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
-  return res.json();
-}
-
 async function postJSONBody(path, body) {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
@@ -33,9 +27,6 @@ export const api = {
   getIncidents: (railSlug) =>
     getJSON(railSlug ? `/api/incidents?rail=${railSlug}` : "/api/incidents"),
   getMethodology: () => getJSON("/api/methodology"),
-  triggerOutage: (slug, severity = 0.4) =>
-    postJSON(`/api/demo/trigger-outage/${slug}?severity=${severity}`),
-  resolveOutage: (slug) => postJSON(`/api/demo/resolve-outage/${slug}`),
   requestCertificate: (body) => postJSONBody("/api/certificates", body),
   verifyCertificate: (bundle) => postJSONBody("/api/verify", bundle),
 };

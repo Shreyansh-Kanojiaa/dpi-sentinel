@@ -352,13 +352,6 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   line-height: 1.6;
   color: var(--ink-soft);
 }
-.rail-expanded-controls { flex: 0 0 220px; }
-.rail-expanded-controls .btn-danger,
-.rail-expanded-controls .btn-ghost {
-  display: block;
-  width: 100%;
-  margin-bottom: 8px;
-}
 .methodology-box {
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -618,7 +611,6 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   .rail-pulse svg { width: 100%; max-width: 340px; }
 
   .rail-expanded { margin-left: 0; }
-  .rail-expanded-controls { flex: 1 1 100%; }
   .copilot { margin-left: 0; }
 
   .incident-entry { flex-direction: column; gap: 8px; }
