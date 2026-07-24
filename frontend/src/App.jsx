@@ -104,6 +104,13 @@ function RailRow({ rail, expanded, onToggle }) {
   );
 }
 
+// Incident log grows without bound over time (every quorum-confirmed
+// incident, including short-lived ones from demo/stress testing) — cap the
+// default view so the page doesn't require scrolling past a long history to
+// reach "why this exists" / the footer. Incidents are already sorted
+// most-recent-first by the backend; this only slices that array for display.
+const DEFAULT_VISIBLE_INCIDENTS = 5;
+
 function IncidentEntry({ incident }) {
   const start = new Date(incident.started_at);
   const dateStr = start.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
@@ -158,6 +165,7 @@ export default function App() {
   const [expandedSlug, setExpandedSlug] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [error, setError] = useState(null);
+  const [showAllIncidents, setShowAllIncidents] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -292,9 +300,22 @@ export default function App() {
               No incidents recorded yet.
             </div>
           ) : (
-            incidents.map((inc) => <IncidentEntry key={inc.id} incident={inc} />)
+            (showAllIncidents ? incidents : incidents.slice(0, DEFAULT_VISIBLE_INCIDENTS)).map((inc) => (
+              <IncidentEntry key={inc.id} incident={inc} />
+            ))
           )}
         </div>
+
+        {!showAllIncidents && incidents.length > DEFAULT_VISIBLE_INCIDENTS && (
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{ marginTop: 12 }}
+            onClick={() => setShowAllIncidents(true)}
+          >
+            Show all {incidents.length} incidents
+          </button>
+        )}
       </section>
 
       {/* Why this exists */}
