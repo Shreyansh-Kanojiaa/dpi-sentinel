@@ -19,9 +19,24 @@ frontend/.vite/
 *.key
 witness/witness.key
 
+# Aggregator's own Ed25519 identity (backend/identity.py, local-dev default path)
+aggregator.key
+
+# Checkpoint git-anchor repo (Milestone 3) — Docker Compose keeps this in a
+# named volume (never on the host tree), but CHECKPOINT_REPO_PATH could be
+# pointed at a local dir during non-Docker dev; ignore it defensively so a
+# nested git repo never gets picked up.
+checkpoint-repo/
+
 # Env files
 .env
 .env.local
+
+# Claude Code local settings (machine-specific, not portable)
+.claude/settings.local.json
+
+# Logs
+*.log
 
 # Editor / OS
 .vscode/
