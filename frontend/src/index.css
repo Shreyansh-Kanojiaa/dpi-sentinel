@@ -261,13 +261,10 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   color: var(--stone);
 }
 
-.ledger-grid {
-  display: grid;
-  grid-template-columns: 14px minmax(150px, 1.1fr) 168px 96px 96px 108px minmax(150px, 1fr);
+.rail-ledger-head {
+  display: flex;
   align-items: center;
   gap: 18px;
-}
-.ledger-cols {
   font-family: var(--font-mono);
   font-size: 9.5px;
   letter-spacing: 0.1em;
@@ -275,8 +272,8 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   color: var(--stone);
   border-bottom: 1px solid var(--stone-line);
   padding-bottom: 7px;
+  margin-bottom: 2px;
 }
-.ledger-cols .col-signal { text-align: right; }
 
 .rail-row {
   border-bottom: 1px solid var(--stone-line);
@@ -284,7 +281,12 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
 }
 .rail-main {
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 18px;
 }
+.rail-cell-name { flex: 0 0 200px; }
+.rail-plain { flex: 1 1 auto; min-width: 0; }
 .rail-main:hover .rail-name-display { color: var(--blue); }
 .rail-chevron {
   font-family: var(--font-mono);
@@ -310,6 +312,13 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   gap: 8px;
   font-size: 13px;
   font-weight: 500;
+}
+.rail-plain .rail-status { font-size: 14.5px; }
+.rail-plain-sub {
+  font-size: 11.5px;
+  color: var(--stone);
+  margin-top: 4px;
+  line-height: 1.5;
 }
 .rail-stat { font-family: var(--font-mono); font-size: 13.5px; }
 .rail-stat-value { display: block; }
@@ -365,6 +374,12 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   word-break: break-word;
 }
 .methodology-box .target { color: var(--stone); }
+
+/* Raw metrics, relocated into the expanded rail view (Milestone: plain-language
+   default). Reuses .rail-stat / .rail-stat-value / .rail-stat-label / .sim-flag. */
+.rail-metrics { flex: 1 1 260px; min-width: 0; }
+.rail-metrics-grid { display: flex; gap: 28px; flex-wrap: wrap; }
+.rail-metrics-pulse { margin-top: 18px; }
 
 /* ============================================================
    Outage copilot
@@ -494,6 +509,19 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   color: var(--stone);
   margin-right: 8px;
 }
+.incident-tech-toggle {
+  margin-top: 4px;
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.incident-tech-toggle:hover { color: var(--ink); }
 .incident-source {
   margin-top: 8px;
   font-size: 11px;
@@ -595,20 +623,13 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
    Responsive
    ============================================================ */
 @media (max-width: 860px) {
-  .ledger-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px 20px;
-    align-items: center;
-  }
-  .ledger-grid.ledger-cols { display: none; }
+  .rail-ledger-head { display: none; }
   .ledger-header { flex-wrap: wrap; gap: 4px 16px; }
-  .rail-chevron { order: 0; }
-  .rail-cell-name { order: 1; flex: 1 1 calc(100% - 34px); }
-  .rail-status { order: 2; flex: 1 1 100%; }
-  .rail-stat { order: 3; flex: 1 1 26%; }
-  .rail-pulse { order: 4; flex: 1 1 100%; justify-content: flex-start; margin-top: 6px; }
-  .rail-pulse svg { width: 100%; max-width: 340px; }
+  .rail-main { flex-wrap: wrap; gap: 6px 14px; }
+  .rail-cell-name { flex: 1 1 calc(100% - 32px); }
+  .rail-plain { flex: 1 1 100%; }
+  .rail-metrics-grid { gap: 20px; }
+  .rail-metrics-pulse svg { width: 100%; max-width: 340px; }
 
   .rail-expanded { margin-left: 0; }
   .copilot { margin-left: 0; }

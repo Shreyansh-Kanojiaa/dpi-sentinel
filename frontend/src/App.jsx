@@ -33,6 +33,41 @@ const SEVERITY_STAMP = {
   critical: "stamp--rust",
 };
 
+// Plain-language default read for the three quorum states, shown collapsed to
+// the citizen who needs an instant answer rather than a dashboard to interpret.
+// HONESTY RULE (mirrors quorum.py's three-state design): these THREE must stay
+// clearly distinct. "insufficient_data" must never read as "everything's fine"
+// — only as genuine uncertainty ("can't confirm"), which is a different message
+// from "operational". The full metrics behind each read stay one click away in
+// the expanded row; nothing is removed, only relocated.
+const RAIL_PLAIN = {
+  operational: {
+    headline: "Working normally",
+    sub: "Independent witnesses are checking this rail continuously and agree it's up.",
+  },
+  degraded: {
+    headline: "Confirmed problem right now",
+    sub: "Multiple independent witnesses agree this rail is failing right now.",
+  },
+  insufficient_data: {
+    headline: "Can't confirm status right now",
+    sub: "Too few independent witnesses are reporting to say either way — this is not an all-clear.",
+  },
+};
+
+// Plain-language default for each incident-timeline event label. The precise
+// technical narrative (witness counts, agreement %, thresholds) is UNCHANGED —
+// it just moves behind the per-incident "Technical details" toggle instead of
+// being the default. Any label without a mapping falls back to its own
+// narrative, so a line is never blank.
+const EVENT_PLAIN = {
+  Detected: "A problem was detected.",
+  Updated: "The situation changed while the problem was ongoing.",
+  Resolved: "Service is back to normal.",
+  Identified: "The cause was identified.",
+  Monitoring: "Service was partially recovering, and being watched.",
+};
+
 function StatusDot({ status }) {
   const color = SEVERITY_COLOR[status] || "var(--stone)";
   return (
@@ -45,9 +80,10 @@ function StatusDot({ status }) {
 
 function RailRow({ rail, expanded, onToggle }) {
   const u = rail.uptime_24h || {};
+  const plain = RAIL_PLAIN[rail.status];
   return (
     <div className="rail-row">
-      <div className="rail-main ledger-grid" onClick={onToggle}>
+      <div className="rail-main" onClick={onToggle}>
         <div className="rail-chevron">{expanded ? "▾" : "▸"}</div>
 
         <div className="rail-cell-name">
@@ -55,32 +91,13 @@ function RailRow({ rail, expanded, onToggle }) {
           <div className="rail-operator">{rail.operator}</div>
         </div>
 
-        <div className="rail-status" style={{ color: SEVERITY_COLOR[rail.status] || "var(--ink)" }}>
-          <StatusDot status={rail.status} />
-          {SEVERITY_LABEL[rail.status] || rail.status}
-        </div>
-
-        <div className="rail-stat">
-          <span className="rail-stat-value">{u.availability_pct != null ? `${u.availability_pct}%` : "—"}</span>
-          <span className="rail-stat-label">availability · 24h</span>
-        </div>
-
-        <div className="rail-stat">
-          <span className="rail-stat-value">{u.avg_latency_ms != null ? `${u.avg_latency_ms}ms` : "—"}</span>
-          <span className="rail-stat-label">avg latency</span>
-        </div>
-
-        <div className="rail-stat">
-          <span className="rail-stat-value">
-            {u.avg_simulated_success_rate != null ? `${(u.avg_simulated_success_rate * 100).toFixed(1)}%` : "—"}
-          </span>
-          <span className="rail-stat-label">
-            success rate <em className="sim-flag" title="Calibrated simulation — not live settlement data">simulated</em>
-          </span>
-        </div>
-
-        <div className="rail-pulse">
-          <PulseStrip points={u.sparkline || []} color={rail.color} />
+        {/* Plain-language default read. Raw metrics live in the expanded view. */}
+        <div className="rail-plain">
+          <div className="rail-status" style={{ color: SEVERITY_COLOR[rail.status] || "var(--ink)" }}>
+            <StatusDot status={rail.status} />
+            {plain ? plain.headline : SEVERITY_LABEL[rail.status] || rail.status}
+          </div>
+          {plain && <div className="rail-plain-sub">{plain.sub}</div>}
         </div>
       </div>
 
@@ -92,6 +109,33 @@ function RailRow({ rail, expanded, onToggle }) {
               <strong>Methodology —</strong> {rail.probe_methodology}
               <br />
               <span className="target">target: {rail.probe_target}</span>
+            </div>
+          </div>
+
+          {/* All raw metrics, relocated here from the collapsed row — nothing
+              removed, just no longer the default read. */}
+          <div className="rail-metrics">
+            <div className="rail-metrics-grid">
+              <div className="rail-stat">
+                <span className="rail-stat-value">{u.availability_pct != null ? `${u.availability_pct}%` : "—"}</span>
+                <span className="rail-stat-label">availability · 24h</span>
+              </div>
+              <div className="rail-stat">
+                <span className="rail-stat-value">{u.avg_latency_ms != null ? `${u.avg_latency_ms}ms` : "—"}</span>
+                <span className="rail-stat-label">avg latency</span>
+              </div>
+              <div className="rail-stat">
+                <span className="rail-stat-value">
+                  {u.avg_simulated_success_rate != null ? `${(u.avg_simulated_success_rate * 100).toFixed(1)}%` : "—"}
+                </span>
+                <span className="rail-stat-label">
+                  success rate <em className="sim-flag" title="Calibrated simulation — not live settlement data">simulated</em>
+                </span>
+              </div>
+            </div>
+            <div className="rail-metrics-pulse">
+              <div className="rail-stat-label" style={{ marginBottom: 6 }}>signal · live probes</div>
+              <PulseStrip points={u.sparkline || []} color={rail.color} />
             </div>
           </div>
         </div>
@@ -112,6 +156,11 @@ function RailRow({ rail, expanded, onToggle }) {
 const DEFAULT_VISIBLE_INCIDENTS = 5;
 
 function IncidentEntry({ incident }) {
+  // Per-incident (not per-event) toggle: an incident reads as one story, and a
+  // control on every timeline row would clutter it. One switch flips all of
+  // this incident's events between the plain-language default and the exact
+  // technical narrative that renders today.
+  const [showTech, setShowTech] = useState(false);
   const start = new Date(incident.started_at);
   const dateStr = start.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
@@ -137,10 +186,22 @@ function IncidentEntry({ incident }) {
               <time>
                 {new Date(e.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
               </time>
-              <strong>{e.label}.</strong> {e.narrative}
+              {showTech ? (
+                <><strong>{e.label}.</strong> {e.narrative}</>
+              ) : (
+                EVENT_PLAIN[e.label] || e.narrative
+              )}
             </div>
           ))}
         </div>
+
+        <button
+          type="button"
+          className="incident-tech-toggle"
+          onClick={() => setShowTech((v) => !v)}
+        >
+          {showTech ? "Hide technical details" : "Technical details"}
+        </button>
 
         {incident.source_note && (
           <div className="incident-source">Source note: {incident.source_note}</div>
@@ -266,14 +327,10 @@ export default function App() {
           <span className="ledger-note">click a row to expand · {rails.length} monitored</span>
         </div>
 
-        <div className="ledger-grid ledger-cols">
-          <div />
-          <div>Rail</div>
-          <div>Quorum status</div>
-          <div>Avail · 24h</div>
-          <div>Latency</div>
-          <div>Success (sim.)</div>
-          <div className="col-signal">Signal · live probes</div>
+        <div className="rail-ledger-head">
+          <div className="rail-chevron" />
+          <div className="rail-cell-name">Rail</div>
+          <div className="rail-plain">Current status</div>
         </div>
 
         <div>
