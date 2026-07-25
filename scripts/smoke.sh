@@ -80,6 +80,12 @@ $COMPOSE stop demo-target >/dev/null
 wait_for 120 "demo rail degraded" rail_is demo degraded
 
 log "Checking WHY it was declared degraded"
+wait_for 15 "incident to be persisted" bash -c "curl -sf '$API/api/incidents' | python3 -c \"
+import sys, json
+live = [i for i in json.load(sys.stdin) if not i['is_historical'] and i['severity'] == 'degraded' and 'Demo Rail' in i['title']]
+sys.exit(0 if live else 1)
+\""
+
 curl -sf "$API/api/incidents" | python3 -c "
 import sys, json
 live = [i for i in json.load(sys.stdin)
@@ -96,6 +102,14 @@ assert reporting == assigned, f'participation dropped: {reporting}/{assigned} re
 print(f'  ok   quorum receipt present: {reporting}/{assigned} reporting, '
       f\"agreement {q.get('agreement_fraction')}\")
 " || die "quorum snapshot did not show an agreement-driven detection"
+
+log "Waiting for a checkpoint to seal the incident log so the certificate has proofs"
+wait_for 70 "checkpoint covers latest log entry" bash -c "
+  curl -sf '$API/api/log/summary' | python3 -c \"
+import sys, json
+s = json.load(sys.stdin)
+sys.exit(0 if s.get('latest_checkpoint') and s['latest_checkpoint'].get('seq_end', 0) >= s.get('latest_sequence_number', 1) else 1)
+\""
 
 log "Requesting an Evidence Certificate inside the incident window"
 TS=$(curl -sf "$API/api/incidents" | python3 -c "
@@ -137,6 +151,13 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "$API/api/certificates/definitelyn
 log "Restarting demo-target: the incident should resolve on its own"
 $COMPOSE start demo-target >/dev/null
 wait_for 120 "demo rail operational again" rail_is demo operational
+
+wait_for 15 "incident to be marked resolved" bash -c "curl -sf '$API/api/incidents' | python3 -c \"
+import sys, json
+live = [i for i in json.load(sys.stdin) if not i['is_historical'] and 'Demo Rail' in i['title']]
+sys.exit(0 if live and live[0]['status'] == 'resolved' else 1)
+\""
+
 curl -sf "$API/api/incidents" | python3 -c "
 import sys, json
 live = [i for i in json.load(sys.stdin) if not i['is_historical'] and 'Demo Rail' in i['title']]
