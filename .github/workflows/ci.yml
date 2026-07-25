@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A demo-day push shouldn't queue behind an older run of the same branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+
+  backend:
+    name: Backend imports and syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"   # matches backend/Dockerfile and witness/Dockerfile
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r witness/requirements.txt
+      - name: Byte-compile everything
+        run: python -m compileall -q backend witness
+      # There is no test suite in this repo. Importing every module is the
+      # cheapest check that still catches the failure that actually happens:
+      # a module that only gets imported at aggregator startup being broken,
+      # which otherwise surfaces as a container that won't boot.
+      - name: Import every module
+        run: |
+          cd backend && for m in *.py; do
+            [ "$m" = "reset_demo_state.py" ] && continue   # argparse/CLI entrypoint
+            python -c "import ${m%.py}" || exit 1
+          done
+      # backend/signing.py and witness/signing.py must serialise identically
+      # or every honest observation fails signature verification. They are
+      # separate files by design (the services are independently deployable),
+      # so nothing but a check like this stops them drifting apart.
+      - name: Check the aggregator and witness signers agree byte for byte
+        run: python scripts/check_signers_agree.py
+
+  smoke:
+    name: End-to-end demo path
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the pipeline smoke test
+        env:
+          CI: "1"          # tells the script to tear the stack down afterwards
+        run: bash scripts/smoke.sh
