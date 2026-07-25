@@ -43,3 +43,7 @@ checkpoint-repo/
 .idea/
 *.swp
 .DS_Store
+
+# Pitch deck (kept locally, not in the repo)
+*.pptx
+.~lock.*#
