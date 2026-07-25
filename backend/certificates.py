@@ -84,24 +84,47 @@ CLAIMED_TIMESTAMP_FUTURE_TOLERANCE_SECONDS = 300
 CERT_RATE_LIMIT_MAX = int(os.environ.get("CERT_RATE_LIMIT_MAX", "5"))
 CERT_RATE_LIMIT_WINDOW_SECONDS = float(os.environ.get("CERT_RATE_LIMIT_WINDOW_SECONDS", "600"))
 
+# Looking a certificate up again is not minting one, so it gets its own,
+# much larger budget and its own store. Sharing the issuance deque would
+# mean a citizen who re-opens their own printable certificate a few times
+# silently loses the ability to request a new one — the two actions have
+# nothing to do with each other and must not compete for the same budget.
+CERT_LOOKUP_RATE_LIMIT_MAX = int(os.environ.get("CERT_LOOKUP_RATE_LIMIT_MAX", "60"))
+CERT_LOOKUP_RATE_LIMIT_WINDOW_SECONDS = float(
+    os.environ.get("CERT_LOOKUP_RATE_LIMIT_WINDOW_SECONDS", "600")
+)
+
 _rate_lock = threading.Lock()
 _requests_by_ip: dict[str, deque] = defaultdict(deque)
+_lookups_by_ip: dict[str, deque] = defaultdict(deque)
 
 
-def check_rate_limit(client_ip: str) -> bool:
-    """True if this request is allowed; False if the caller is over budget.
-    Rejected calls are logged by the endpoint (with the IP) so abuse is
-    visible in the aggregator logs, not silently dropped."""
+def _allow(store: dict[str, deque], client_ip: str, max_calls: int, window_seconds: float) -> bool:
     now = datetime.utcnow().timestamp()
-    cutoff = now - CERT_RATE_LIMIT_WINDOW_SECONDS
+    cutoff = now - window_seconds
     with _rate_lock:
-        window = _requests_by_ip[client_ip]
+        window = store[client_ip]
         while window and window[0] < cutoff:
             window.popleft()
-        if len(window) >= CERT_RATE_LIMIT_MAX:
+        if len(window) >= max_calls:
             return False
         window.append(now)
         return True
+
+
+def check_rate_limit(client_ip: str) -> bool:
+    """True if this ISSUANCE request is allowed; False if over budget.
+    Rejected calls are logged by the endpoint (with the IP) so abuse is
+    visible in the aggregator logs, not silently dropped."""
+    return _allow(_requests_by_ip, client_ip, CERT_RATE_LIMIT_MAX, CERT_RATE_LIMIT_WINDOW_SECONDS)
+
+
+def check_lookup_rate_limit(client_ip: str) -> bool:
+    """True if this LOOKUP request is allowed. Separate budget from issuance
+    (see the constants above)."""
+    return _allow(
+        _lookups_by_ip, client_ip, CERT_LOOKUP_RATE_LIMIT_MAX, CERT_LOOKUP_RATE_LIMIT_WINDOW_SECONDS
+    )
 
 
 # --- Issuance ----------------------------------------------------------------
@@ -225,6 +248,7 @@ def issue_certificate(
 
     signature = _sign_certificate(cert)
 
+    payload_json = canonical_json_bytes(cert).decode("utf-8")
     db.add(EvidenceCertificate(
         certificate_id=cert["certificate_id"],
         rail_id=rail.id,
@@ -233,7 +257,7 @@ def issue_certificate(
         claimed_transaction_ref=claimed_transaction_ref,
         issued_at=now,
         requester_ip=requester_ip,
-        payload_json=canonical_json_bytes(cert).decode("utf-8"),
+        payload_json=payload_json,
         signature=signature,
     ))
     db.commit()
@@ -242,10 +266,73 @@ def issue_certificate(
         "issued certificate %s for rail=%s incident=%d to %s",
         cert["certificate_id"], rail.slug, incident.id, requester_ip or "unknown",
     )
+    # `fingerprint` is a SIBLING of `certificate`, never a key inside it —
+    # inside, it would be a hash of a document containing itself, and every
+    # signature would break. Returned here as well as from the lookup so the
+    # printable view can build its QR straight off the issue response, and so
+    # both paths derive the string from the same code.
     return {
         "certificate": cert,
         "signature": signature,
         "aggregator_public_key_hex": public_key_hex(),
+        "fingerprint": document_fingerprint(payload_json),
+    }
+
+
+# --- Lookup ------------------------------------------------------------------
+
+
+def document_fingerprint(payload_json: str) -> str:
+    """SHA-256 over the EXACT signed bytes, as stored.
+
+    This is not a second, parallel hash scheme sitting alongside the
+    signature: `payload_json` IS `canonical_json_bytes(cert)`, and
+    `_sign_certificate` signs `sha256(canonical_json_bytes(cert)).digest()`.
+    So this hex string is precisely the digest the Ed25519 signature covers.
+    Printing a prefix of it on paper therefore pins the document against the
+    same number the signature is over, and leaks nothing.
+
+    Computed here and never in the browser: reproducing canonical_json_bytes
+    in JavaScript would be a second serializer that has to stay byte-identical
+    with this one forever, which is precisely what the project forbids. The
+    client only ever compares this string to the one printed on the page.
+    """
+    return hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+
+
+def load_certificate(db: Session, certificate_id: str) -> dict | None:
+    """Rebuild an issued bundle from its id, byte for byte.
+
+    Nothing is re-derived: `payload_json` holds the exact canonical JSON that
+    was signed, so this returns what was issued rather than something
+    equivalent-looking. That matters because `issued_at`, `certificate_id`
+    and the Merkle proofs in `log_evidence` are all point-in-time values that
+    would differ if the document were rebuilt today.
+
+    json.loads() here is safe despite the signature covering exact bytes:
+    verify_certificate re-canonicalises with canonical_json_bytes before
+    hashing, so key order and whitespace cannot survive to affect the digest.
+
+    PRIVACY, decided deliberately: certificate_id is a 122-bit random
+    capability token, and the document it returns can contain a transaction
+    reference the citizen typed in themselves. Anyone holding the id (or a
+    printout carrying it) can fetch the document. That is intended for a
+    document whose whole purpose is to be handed to a bank or an ombudsman,
+    but it is a real trade-off, not an oversight. There is deliberately no
+    listing endpoint, so ids cannot be enumerated.
+    """
+    row = (
+        db.query(EvidenceCertificate)
+        .filter(EvidenceCertificate.certificate_id == certificate_id)
+        .first()
+    )
+    if row is None:
+        return None
+    return {
+        "certificate": json.loads(row.payload_json),
+        "signature": row.signature,
+        "aggregator_public_key_hex": public_key_hex(),
+        "fingerprint": document_fingerprint(row.payload_json),
     }
 
 

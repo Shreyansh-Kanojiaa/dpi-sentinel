@@ -3,6 +3,8 @@ import { api } from "./api";
 import PulseStrip from "./PulseStrip";
 import OutageCopilot from "./OutageCopilot";
 import VerifyPage from "./VerifyPage";
+import VerificationLedger from "./VerificationLedger";
+import CertificatePrint from "./CertificatePrint";
 
 const SEVERITY_LABEL = {
   operational: "Operational",
@@ -257,9 +259,22 @@ export default function App() {
     return () => clearInterval(id);
   }, [refresh]);
 
-  // After all hooks (rules of hooks), branch to the verify page if routed there.
-  if (route.startsWith("#/verify")) {
-    return <VerifyPage />;
+  // After all hooks (rules of hooks), branch to a sub-page if routed there.
+  // Routes: #/verify | #/verify/<id>?f=<fingerprint> | #/certificate/<id>
+  // The query string lives AFTER the "#", so window.location.search is empty
+  // and it has to be split off the hash itself. URLSearchParams is native;
+  // this stays a few lines rather than becoming a router (see CLAUDE.md).
+  const [hashPath, hashQuery] = route.replace(/^#\/?/, "").split("?");
+  const [page, pageArg] = hashPath.split("/");
+  const fingerprint = new URLSearchParams(hashQuery || "").get("f");
+
+  if (page === "certificate" && pageArg) {
+    return <CertificatePrint id={pageArg} />;
+  }
+  if (page === "verify") {
+    // Bare "#/verify" gives pageArg === undefined, so the paste/upload page
+    // behaves exactly as before.
+    return <VerifyPage certificateId={pageArg || null} fingerprint={fingerprint} />;
   }
 
   // "insufficient_data" means quorum can't confirm health OR a problem — it
@@ -385,6 +400,11 @@ export default function App() {
           </button>
         )}
       </section>
+
+      {/* The trust machinery, surfaced. Sits directly under the incident log
+          because "why should I believe any of the above" is the next question
+          a reader has, and the answer was previously only visible in code. */}
+      <VerificationLedger />
 
       {/* Why this exists */}
       <section className="why-panel">

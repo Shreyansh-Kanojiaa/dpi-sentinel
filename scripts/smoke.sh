@@ -125,6 +125,15 @@ for name, r in v['checks'].items():
 assert v['valid'], f\"certificate did not verify: {v.get('failed_checks')}\"
 " || die "issued certificate failed verification"
 
+log "Re-fetching that certificate by id (what a scanned QR code does)"
+CID=$(python3 -c "import json; print(json.load(open('/tmp/cert.json'))['certificate']['certificate_id'])")
+# Run inside the container: the check imports backend/signing.py, which needs
+# PyNaCl, and only the aggregator image is guaranteed to have it.
+$COMPOSE exec -T aggregator python - "$CID" < scripts/check_cert_roundtrip.py \
+  || die "certificate did not survive the fetch-by-id round trip"
+code=$(curl -s -o /dev/null -w '%{http_code}' "$API/api/certificates/definitelynotarealcertificateid")
+[ "$code" = "404" ] && ok "unknown certificate id returns 404" || die "unknown id returned $code, expected 404"
+
 log "Restarting demo-target: the incident should resolve on its own"
 $COMPOSE start demo-target >/dev/null
 wait_for 120 "demo rail operational again" rail_is demo operational

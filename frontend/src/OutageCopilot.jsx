@@ -67,9 +67,17 @@ function CertificateResult({ bundle }) {
 
       <div className="cert-disclaimer">{cert.disclaimer}</div>
 
-      <button className="btn-primary" style={{ marginTop: 14 }} onClick={() => downloadBundle(bundle)}>
-        Download certificate (JSON)
-      </button>
+      {/* Two artifacts, on purpose. The JSON is the verifiable one and needs
+          no server to check. The printable copy is for handing to a human
+          across a counter. */}
+      <div className="cert-actions">
+        <button className="btn-primary" onClick={() => downloadBundle(bundle)}>
+          Download certificate (JSON)
+        </button>
+        <a className="btn-ghost" href={`#/certificate/${cert.certificate_id}`}>
+          Open printable copy →
+        </a>
+      </div>
     </div>
   );
 }

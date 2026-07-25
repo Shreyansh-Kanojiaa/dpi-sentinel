@@ -25,7 +25,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -516,6 +516,90 @@ def get_witness_assignments():
         db.close()
 
 
+@app.get("/api/witnesses")
+def get_witnesses():
+    """
+    The trusted witness registry, made visible.
+
+    This is the roster the whole trust model rests on: which independent
+    services the aggregator will accept signed observations from, and which
+    public key it will check each one against. That key comes only from
+    registry.py's out-of-band fetch at startup, never from anything an
+    observation claims about itself, so publishing it lets anyone confirm
+    the aggregator is checking against the same key the witness publishes at
+    its own /pubkey endpoint.
+
+    "reporting" is derived the same way quorum.py derives participation, by
+    comparing last_seen_at against WINDOW_SECONDS, so this roster and a
+    rail's witness_coverage string cannot disagree. A witness that has gone
+    quiet stays listed and stays assigned; silence is not deregistration,
+    and it is never evidence of health.
+    """
+    db = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        cutoff = now - timedelta(seconds=quorum.WINDOW_SECONDS)
+        rails_by_witness = {}
+        for a, w, r in (
+            db.query(WitnessRailAssignment, Witness, Rail)
+            .join(Witness, WitnessRailAssignment.witness_id == Witness.id)
+            .join(Rail, WitnessRailAssignment.rail_id == Rail.id)
+            .order_by(Rail.slug)
+            .all()
+        ):
+            rails_by_witness.setdefault(w.slug, []).append(r.slug)
+
+        return [
+            {
+                "slug": w.slug,
+                "public_key_hex": w.public_key_hex,
+                "registered_at": w.registered_at.isoformat(),
+                "last_seen_at": w.last_seen_at.isoformat() if w.last_seen_at else None,
+                "reporting": bool(w.last_seen_at and w.last_seen_at >= cutoff),
+                "assigned_rails": rails_by_witness.get(w.slug, []),
+            }
+            for w in db.query(Witness).order_by(Witness.slug).all()
+        ]
+    finally:
+        db.close()
+
+
+@app.get("/api/log/summary")
+def get_log_summary():
+    """
+    Headline numbers for the tamper-evident log, so the page can state the
+    chain's size and its latest external anchor without pulling entries.
+
+    Deliberately does NOT re-verify the chain: that is verify_log.py's job,
+    it walks every entry, and claiming "verified" from a cheap count here
+    would be exactly the kind of unearned reassurance this project exists to
+    avoid. This reports what is recorded, not a verdict.
+    """
+    db = SessionLocal()
+    try:
+        latest_entry = db.query(LogEntry).order_by(LogEntry.sequence_number.desc()).first()
+        latest_cp = db.query(Checkpoint).order_by(Checkpoint.seq_end.desc()).first()
+        return {
+            "entry_count": db.query(LogEntry).count(),
+            "latest_sequence_number": latest_entry.sequence_number if latest_entry else None,
+            "checkpoint_count": db.query(Checkpoint).count(),
+            "latest_checkpoint": {
+                "id": latest_cp.id,
+                "seq_start": latest_cp.seq_start,
+                "seq_end": latest_cp.seq_end,
+                "merkle_root": latest_cp.merkle_root,
+                "timestamp": latest_cp.timestamp.isoformat(),
+                "git_committed": latest_cp.git_committed,
+                "git_commit_sha": latest_cp.git_commit_sha,
+            }
+            if latest_cp
+            else None,
+            "aggregator_public_key_hex": identity.public_key_hex(),
+        }
+    finally:
+        db.close()
+
+
 class CertificateRequest(BaseModel):
     rail_slug: str
     claimed_timestamp: str
@@ -572,6 +656,51 @@ def post_certificate(body: CertificateRequest, request: Request):
         return certificates.issue_certificate(
             db, rail, incident, claimed_ts, body.claimed_transaction_ref, client_ip,
         )
+    finally:
+        db.close()
+
+
+@app.get("/api/certificates/{certificate_id}")
+def get_certificate(certificate_id: str, request: Request):
+    """
+    Re-fetch an issued certificate by its id, byte for byte as it was signed.
+
+    This exists so a printed certificate can carry a QR code: the document
+    itself is several kilobytes of canonical JSON and cannot fit in a QR, so
+    the printed code carries this id plus a fingerprint prefix, and the
+    verifier fetches the real document here before re-running its checks.
+
+    Rate-limited on a SEPARATE budget from issuance
+    (certificates.check_lookup_rate_limit). Reading a document that was
+    already signed is not minting a new one, and sharing the issuance budget
+    would mean re-opening your own certificate a few times quietly cost you
+    the ability to request another.
+
+    Privacy: see certificates.load_certificate's docstring. The id is an
+    unguessable capability token and there is deliberately no listing
+    endpoint, but anyone holding a printout can fetch the document it names.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    if not certificates.check_lookup_rate_limit(client_ip):
+        logger.warning("rate-limited certificate lookup from %s", client_ip)
+        raise HTTPException(
+            status_code=429,
+            detail="Too many certificate lookups from this address. Try again shortly.",
+        )
+
+    db = SessionLocal()
+    try:
+        bundle = certificates.load_certificate(db, certificate_id)
+        if bundle is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "No certificate with that id. Check the identifier on the printed copy. "
+                    "Certificates are not shared between deployments, so one issued by a "
+                    "different aggregator will not resolve here."
+                ),
+            )
+        return bundle
     finally:
         db.close()
 

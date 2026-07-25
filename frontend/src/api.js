@@ -27,6 +27,10 @@ export const api = {
   getIncidents: (railSlug) =>
     getJSON(railSlug ? `/api/incidents?rail=${railSlug}` : "/api/incidents"),
   getMethodology: () => getJSON("/api/methodology"),
+  getWitnesses: () => getJSON("/api/witnesses"),
+  getLogSummary: () => getJSON("/api/log/summary"),
+  getLog: (limit = 6) => getJSON(`/api/log?limit=${limit}`),
   requestCertificate: (body) => postJSONBody("/api/certificates", body),
+  getCertificate: (id) => getJSON(`/api/certificates/${encodeURIComponent(id)}`),
   verifyCertificate: (bundle) => postJSONBody("/api/verify", bundle),
 };

@@ -585,6 +585,272 @@ a.btn-primary, a.btn-ghost {
   color: var(--stone);
   line-height: 1.65;
 }
+/* ============================================================
+   Verification ledger (witness roster + hash chain)
+   ============================================================ */
+.ledger-panel {
+  margin-bottom: 52px;
+  border-top: 2.5px solid var(--ink);
+  padding-top: 20px;
+}
+.ledger-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.ledger-intro {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  max-width: 720px;
+  margin: 0 0 22px;
+}
+.ledger-sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--stone);
+  margin: 0 0 10px;
+}
+.ledger-foot {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--stone);
+  max-width: 720px;
+  margin: 10px 0 26px;
+}
+.ledger-error {
+  font-size: 12.5px;
+  color: var(--rust);
+  background: var(--rust-dim);
+  padding: 10px 12px;
+}
+.mono-inline { font-family: var(--font-mono); font-size: 11.5px; }
+
+.witness-table { border-top: 1px solid var(--stone-line); }
+.witness-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.5fr 1.6fr 1.4fr;
+  gap: 14px;
+  align-items: center;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--stone-line);
+  font-size: 12.5px;
+}
+.witness-row--head {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--stone);
+  padding: 6px 2px;
+}
+.witness-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.witness-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+}
+/* A quiet witness is amber, never red: it has not been caught lying, it has
+   stopped speaking, and those are different claims. */
+.witness-dot--quiet { background: var(--amber); }
+.witness-key, .witness-seen { font-family: var(--font-mono); font-size: 11px; color: var(--stone); }
+.witness-rails { font-size: 12px; color: var(--ink-soft); }
+
+.chain-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  background: var(--paper-raised);
+  padding: 16px 18px;
+}
+.chain-stat { display: flex; flex-direction: column; gap: 4px; }
+.chain-stat-value {
+  font-family: var(--font-mono);
+  font-size: 17px;
+  color: var(--ink);
+}
+.chain-stat-value--anchored { color: var(--green); }
+.chain-stat-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--stone);
+}
+
+.chain-entries { margin-top: 12px; border-top: 1px solid var(--stone-line); }
+.chain-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--stone-line);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.chain-entry-seq { color: var(--ink); min-width: 62px; }
+.chain-entry-type { color: var(--stone); min-width: 96px; }
+.chain-entry-hash { color: var(--ink-soft); }
+
+@media (max-width: 720px) {
+  .witness-row { grid-template-columns: 1fr 1fr; row-gap: 6px; }
+  .witness-row--head { display: none; }
+}
+
+/* ============================================================
+   Printable Evidence Certificate (#/certificate/<id>)
+   ============================================================ */
+.mono { font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+.cert-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+
+.cert-print-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--stone-line);
+}
+.cert-print-hint { flex-basis: 100%; margin: 0; font-size: 11.5px; color: var(--stone); line-height: 1.55; }
+
+.cert-sheet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+  border-bottom: 2.5px solid var(--ink);
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+}
+.cert-sheet-title {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 6px 0 0;
+}
+
+.cert-qr-block {
+  display: flex;
+  gap: 22px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin: 24px 0;
+  padding: 18px;
+  border: 1px solid var(--stone-line);
+}
+.cert-qr-wrap { background: #fff; flex-shrink: 0; line-height: 0; }
+.cert-qr-text { flex: 1; min-width: 240px; font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
+.cert-qr-text p { margin: 8px 0 0; }
+.cert-qr-url {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.cert-unverified { color: var(--rust); font-style: normal; font-size: 11px; }
+
+.cert-howto { margin: 22px 0; font-size: 12px; line-height: 1.65; color: var(--ink-soft); }
+.cert-howto ol { margin: 6px 0 0; padding-left: 20px; }
+.cert-fp-note { margin-top: 12px; font-size: 11.5px; color: var(--stone); }
+
+.cert-appendix { margin-top: 44px; }
+.cert-appendix-intro { font-size: 12px; color: var(--stone); margin: 4px 0 20px; }
+.cert-appendix-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--stone);
+  margin: 18px 0 6px;
+}
+.cert-appendix-entry {
+  border: 1px solid var(--stone-line);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.cert-appendix-head {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.cert-appendix-note { font-size: 11.5px; color: var(--amber); line-height: 1.55; }
+.cert-hash-pair { font-family: var(--font-mono); font-size: 10px; line-height: 1.8; overflow-wrap: anywhere; }
+.cert-hash-pair span { color: var(--stone); display: inline-block; min-width: 92px; }
+.cert-proof { font-family: var(--font-mono); font-size: 10px; margin: 4px 0; padding-left: 22px; line-height: 1.8; }
+.cert-proof span { color: var(--stone); display: inline-block; min-width: 46px; }
+.cert-pre {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.6;
+  background: var(--paper-raised);
+  padding: 10px 12px;
+  margin: 6px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Fingerprint provenance notice on the verify page. Amber, never rust: a
+   mismatch is a question about the paper, not a failed cryptographic check. */
+.fp-note { font-size: 12.5px; line-height: 1.6; padding: 11px 13px; margin-bottom: 16px; }
+.fp-note--match { color: var(--ink-soft); border-left: 3px solid var(--green); background: var(--green-dim); }
+.fp-note--mismatch { color: var(--ink); border-left: 3px solid var(--amber); background: var(--amber-dim); }
+
+/* ============================================================
+   Print
+   ============================================================
+   Governing constraint: Chrome's "Background graphics" checkbox is OFF by
+   default, so every background fill and box-shadow is dropped on paper.
+   print-color-adjust only helps if the reader opts in. Therefore the printed
+   certificate must be fully legible from borders and ink alone; colour is a
+   bonus and never load-bearing. */
+@page { size: A4; margin: 16mm 14mm; }
+
+@media print {
+  .no-print, .site-footer, .terms { display: none !important; }
+
+  body { background: #fff; font-size: 10.5pt; }
+  .page, .page--narrow { max-width: none; padding: 0; }
+
+  /* Survive backgrounds-off */
+  .cert-pre, .cert-qr-wrap, .fp-note { background: none; }
+  .cert-pre { border: 1px solid #bbb; }
+  .stamp { box-shadow: none; border: 1.5px solid currentColor; background: none; }
+  /* A rotated box straddling a page boundary is clipped with no warning, and
+     stamp--in animates from opacity 0, which some engines capture mid-frame
+     as an invisible stamp. Neither is acceptable on an evidence document. */
+  .stamp--tilt, .verdict-banner { transform: none; }
+  .stamp--in, .verdict-banner { animation: none; }
+
+  .cert-appendix { break-before: page; margin-top: 0; }
+  .cert-appendix-entry, .cert-row, .cert-qr-block, .check-row,
+  .cert-disclaimer { break-inside: avoid; }
+  h1, h2, h3, .section-title, .cert-appendix-sub { break-after: avoid; }
+
+  /* A clipped merkle_root is a silently corrupted evidence document. */
+  pre, code, .mono, .cert-row-value, .cert-hash-pair, .cert-proof, .cert-qr-url {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+
+  a[href^="#"] { text-decoration: none; color: inherit; }
+}
+
 /* Terms block. Collapsed by default via native <details>; the register
    stays the page, but the legal copy is present and printable. */
 .terms {

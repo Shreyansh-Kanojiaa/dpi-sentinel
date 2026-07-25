@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "./api";
 
 // Certificate verification page (#/verify). Deliberately trusts NOTHING
@@ -40,31 +40,40 @@ function CheckRow({ name, result }) {
   );
 }
 
-export default function VerifyPage() {
+export default function VerifyPage({ certificateId = null, fingerprint = null }) {
   const [raw, setRaw] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [fetched, setFetched] = useState(null);
+
+  // Fingerprint quoted by a pasted URL, as opposed to one that arrived in the
+  // route. Same meaning, different transport.
+  const [pastedFingerprint, setPastedFingerprint] = useState(null);
 
   const onFile = async (e) => {
     const f = e.target.files?.[0];
-    if (f) setRaw(await f.text());
+    if (!f) return;
+    // A PDF read as text is binary noise, which would surface as a confusing
+    // "doesn't parse as JSON". Say what is actually true instead: the printed
+    // copy is not the verifiable artifact, and here is what to do with it.
+    if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
+      setRaw("");
+      setError(
+        "That's the printed copy, which is a human-readable rendering rather than the signed document itself. " +
+        "Scan its QR code, or copy the certificate id (or the verify address) printed on it into the box above."
+      );
+      return;
+    }
+    setError(null);
+    setRaw(await f.text());
   };
 
-  const verify = async () => {
+  const runVerify = async (bundle) => {
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      let bundle;
-      try {
-        bundle = JSON.parse(raw);
-      } catch {
-        throw new Error("That doesn't parse as JSON. Paste or upload the exact certificate file that was downloaded.");
-      }
-      if (!bundle.certificate || !bundle.signature) {
-        throw new Error('Expected a bundle with "certificate" and "signature" fields. Use the file exactly as issued.');
-      }
       setResult(await api.verifyCertificate(bundle));
     } catch (err) {
       setError(err.message);
@@ -72,6 +81,82 @@ export default function VerifyPage() {
       setBusy(false);
     }
   };
+
+  // Fetch the document an id names, then run exactly the checks the paste path
+  // runs. Shared by the scanned-QR route and the pasted-id/URL path so both
+  // reach verification through identical code.
+  const loadAndVerify = async (id, fp = null) => {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const bundle = await api.getCertificate(id);
+      setFetched(bundle);
+      setPastedFingerprint(fp);
+      // Show the document that was actually verified, so it can be read,
+      // copied and re-checked rather than taken on trust.
+      setRaw(JSON.stringify(bundle, null, 2));
+      setResult(await api.verifyCertificate(bundle));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verify = async () => {
+    const text = raw.trim();
+    let bundle;
+    try {
+      bundle = JSON.parse(text);
+    } catch {
+      // Not JSON. The most likely reason is someone holding only the printed
+      // certificate, copying the id or the verify address off the page. Both
+      // resolve to the same document the QR code points at.
+      const id = text.match(/\b[0-9a-f]{32}\b/i);
+      if (id) {
+        // Allow whitespace inside the captured fingerprint: a URL copied off
+        // the printed page is wrapped across lines. claimedFp strips it.
+        const fp = text.match(/[?&]f=([0-9a-f][0-9a-f\s]{0,80})/i);
+        loadAndVerify(id[0].toLowerCase(), fp ? fp[1] : null);
+        return;
+      }
+      setError(
+        "That is neither a certificate file nor a certificate id. Paste the signed JSON exactly as " +
+        "downloaded, or the 32-character certificate id printed on the paper copy."
+      );
+      return;
+    }
+    if (!bundle.certificate || !bundle.signature) {
+      setError('Expected a bundle with "certificate" and "signature" fields. Use the file exactly as issued.');
+      return;
+    }
+    runVerify(bundle);
+  };
+
+  // Arrived from a scanned QR code (#/verify/<id>?f=<fp>).
+  useEffect(() => {
+    if (certificateId) loadAndVerify(certificateId, null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [certificateId]);
+
+  // String comparison ONLY. The browser never hashes and never re-serializes:
+  // reproducing canonical_json_bytes in JS would be a second serializer that
+  // must stay byte-identical with the Python one forever, which the project
+  // forbids. The server derived this fingerprint from the exact signed bytes.
+  //
+  // Normalise before comparing. A fingerprint is hex, so anything that is not
+  // a hex digit got there in transit: the printed URL wraps across lines on
+  // paper, and copying it back reintroduces that break as a space or a "+",
+  // which URLSearchParams then decodes into the value. Comparing raw produced
+  // a false "mismatch" on a genuine certificate, which is worse than useless
+  // on a document whose whole job is to be trusted. Stripping non-hex cannot
+  // turn a wrong fingerprint into a right one, so this loses no safety.
+  const claimedFp = (fingerprint || pastedFingerprint || "").replace(/[^0-9a-f]/gi, "").toLowerCase() || null;
+  const fpMatch =
+    claimedFp == null || fetched == null
+      ? null
+      : (fetched.fingerprint || "").toLowerCase().startsWith(claimedFp);
 
   return (
     <div className="page page--narrow">
@@ -82,17 +167,48 @@ export default function VerifyPage() {
           Verify an Evidence Certificate
         </h1>
         <div className="masthead-sub" style={{ maxWidth: 620 }}>
-          Paste or upload a certificate file, exactly as it was downloaded. It doesn't matter where the
-          file came from or who forwarded it. Validity is re-derived from the cryptography, not from
-          trusting the sender.
+          {certificateId ? (
+            <>
+              Loaded certificate <span style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{certificateId}</span>{" "}
+              from the aggregator and re-ran the checks. The document is shown below exactly as it
+              was fetched, so you can copy it and check it yourself.
+            </>
+          ) : (
+            <>
+              Paste or upload a certificate file, exactly as it was downloaded. It doesn't matter
+              where the file came from or who forwarded it. Validity is re-derived from the
+              cryptography, not from trusting the sender.
+            </>
+          )}
         </div>
       </header>
+
+      {/* Provenance, reported ABOVE and SEPARATELY from the three
+          cryptographic checks. A mismatch and a valid signature are
+          compatible and mean something specific: this id resolves to a
+          genuinely signed but DIFFERENT document than the paper claims.
+          Collapsing that into the verdict would destroy the distinction. */}
+      {fpMatch === true && (
+        <div className="fp-note fp-note--match">
+          Fingerprint matches the printed copy (first {claimedFp.length} hex digits of the digest
+          this certificate's signature covers).
+        </div>
+      )}
+      {fpMatch === false && (
+        <div className="fp-note fp-note--mismatch">
+          <strong>Fingerprint mismatch.</strong> The printed copy cites{" "}
+          <span className="mono">{claimedFp}</span>, but the document stored under this
+          certificate id begins <span className="mono">{(fetched.fingerprint || "").slice(0, claimedFp.length)}</span>.
+          The checks below still apply to the document shown here; they say nothing about the paper
+          you are holding. Compare the printed details against the document before relying on either.
+        </div>
+      )}
 
       <textarea
         className="verify-input"
         value={raw}
         onChange={(e) => setRaw(e.target.value)}
-        placeholder='{"certificate": { … }, "signature": "…", "aggregator_public_key_hex": "…"}'
+        placeholder={'Paste the signed certificate JSON here, or the 32-character certificate id printed on a paper copy.'}
         spellCheck={false}
       />
       <div className="verify-actions">
@@ -100,7 +216,11 @@ export default function VerifyPage() {
           {busy ? "Verifying…" : "Verify certificate"}
         </button>
         <label className="verify-upload">
-          …or upload the file: <input type="file" accept=".json,application/json" onChange={onFile} />
+          {/* PDFs are accepted by the picker on purpose: someone holding only
+              the printed copy will try it, and onFile then explains what to
+              do instead of the picker silently greying the file out. */}
+          …or upload the file:{" "}
+          <input type="file" accept=".json,application/json,.pdf,application/pdf" onChange={onFile} />
         </label>
       </div>
 
