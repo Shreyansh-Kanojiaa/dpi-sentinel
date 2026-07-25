@@ -29,7 +29,7 @@ RAILS_SEED = [
         "description": (
             "India's real-time interbank payment rail. ~22.35 billion transactions "
             "in April 2026 alone. No independent, real-time, cross-bank uptime monitor "
-            "exists today — NPCI's own dashboard updates monthly."
+            "exists today, and NPCI's own dashboard updates monthly."
         ),
         "monitor_mode": "live",
         "probe_target": "https://www.npci.org.in",
@@ -46,7 +46,7 @@ RAILS_SEED = [
     {
         "slug": "digilocker",
         "name": "DigiLocker",
-        "full_name": "DigiLocker — Digital Document Wallet",
+        "full_name": "DigiLocker: Digital Document Wallet",
         "operator": "Ministry of Electronics & IT",
         "description": (
             "National digital document wallet used for identity, education, and vehicle "
@@ -77,7 +77,7 @@ RAILS_SEED = [
         # actually probing our own nginx.
         "slug": "demo",
         "name": "Demo Rail",
-        "full_name": "Demo Rail — self-hosted test target (not a public service)",
+        "full_name": "Demo Rail: self-hosted test target (not a public service)",
         "operator": "DPI Sentinel (self-hosted)",
         "description": (
             "Not a real rail and not a measurement of any public service. This is an "
@@ -114,7 +114,19 @@ def seed_rails(db):
         existing = db.query(Rail).filter_by(slug=spec["slug"]).first()
         target = PROBE_TARGET_OVERRIDES.get(spec["slug"], spec["probe_target"])
         if existing:
+            # Refresh the display copy too, not just the target. These fields
+            # are pure presentation (they carry no history), and previously
+            # only probe_target was synced, so edits to a description or
+            # methodology silently never reached an existing database and you
+            # had to wipe the DB to see them.
             existing.probe_target = target
+            existing.name = spec["name"]
+            existing.full_name = spec["full_name"]
+            existing.operator = spec["operator"]
+            existing.description = spec["description"]
+            existing.monitor_mode = spec["monitor_mode"]
+            existing.probe_methodology = spec["probe_methodology"]
+            existing.color = spec["color"]
             continue
         rail = Rail(
             slug=spec["slug"],

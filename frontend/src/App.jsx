@@ -7,7 +7,7 @@ import VerifyPage from "./VerifyPage";
 const SEVERITY_LABEL = {
   operational: "Operational",
   // Quorum three-state (Milestone 2) — what the backend actually reports now.
-  degraded: "Degraded — witness quorum",
+  degraded: "Degraded (witness quorum)",
   insufficient_data: "Insufficient data",
   // Legacy severity grades, still used by historical incident entries.
   minor: "Degraded",
@@ -51,7 +51,7 @@ const RAIL_PLAIN = {
   },
   insufficient_data: {
     headline: "Can't confirm status right now",
-    sub: "Too few independent witnesses are reporting to say either way — this is not an all-clear.",
+    sub: "Too few independent witnesses are reporting to say either way. This is not an all-clear.",
   },
 };
 
@@ -114,7 +114,7 @@ function RailRow({ rail, expanded, onToggle }) {
           <div className="rail-expanded-desc">
             {rail.description}
             <div className="methodology-box">
-              <strong>Methodology —</strong> {rail.probe_methodology}
+              <strong>Methodology:</strong> {rail.probe_methodology}
               <br />
               <span className="target">target: {rail.probe_target}</span>
             </div>
@@ -125,19 +125,19 @@ function RailRow({ rail, expanded, onToggle }) {
           <div className="rail-metrics">
             <div className="rail-metrics-grid">
               <div className="rail-stat">
-                <span className="rail-stat-value">{u.availability_pct != null ? `${u.availability_pct}%` : "—"}</span>
+                <span className="rail-stat-value">{u.availability_pct != null ? `${u.availability_pct}%` : "n/a"}</span>
                 <span className="rail-stat-label">availability · 24h</span>
               </div>
               <div className="rail-stat">
-                <span className="rail-stat-value">{u.avg_latency_ms != null ? `${u.avg_latency_ms}ms` : "—"}</span>
+                <span className="rail-stat-value">{u.avg_latency_ms != null ? `${u.avg_latency_ms}ms` : "n/a"}</span>
                 <span className="rail-stat-label">avg latency</span>
               </div>
               <div className="rail-stat">
                 <span className="rail-stat-value">
-                  {u.avg_simulated_success_rate != null ? `${(u.avg_simulated_success_rate * 100).toFixed(1)}%` : "—"}
+                  {u.avg_simulated_success_rate != null ? `${(u.avg_simulated_success_rate * 100).toFixed(1)}%` : "n/a"}
                 </span>
                 <span className="rail-stat-label">
-                  success rate <em className="sim-flag" title="Calibrated simulation — not live settlement data">simulated</em>
+                  success rate <em className="sim-flag" title="Calibrated simulation, not live settlement data">simulated</em>
                 </span>
               </div>
             </div>
@@ -280,7 +280,7 @@ export default function App() {
       cls: "stamp--amber",
       dot: "insufficient_data",
       label: "Limited witness coverage",
-      note: "insufficient data — not a confirmed disruption",
+      note: "insufficient data, not a confirmed disruption",
     },
     issue: { cls: "stamp--rust", dot: "degraded", label: "Active disruption", note: "confirmed by witness quorum" },
   }[overallStatus];
@@ -297,7 +297,7 @@ export default function App() {
             <h1 className="masthead-title">DPI Sentinel</h1>
             <div className="masthead-sub">
               A public ledger of uptime for the digital rails India depends on. UPI alone moves over
-              22 billion transactions a month — no independent, real-time monitor exists for it.
+              22 billion transactions a month, yet no independent, real-time monitor exists for it.
             </div>
           </div>
           <div className="masthead-status">
@@ -318,8 +318,8 @@ export default function App() {
                 "connecting…"
               )}
             </div>
-            <a className="masthead-nav" href="#/verify">
-              Verify an Evidence Certificate →
+            <a className="btn-primary masthead-nav" href="#/verify">
+              Verify a Certificate →
             </a>
           </div>
         </div>
@@ -394,17 +394,143 @@ export default function App() {
         <div className="why-grid">
           <p>
             India's digital public infrastructure now clears more transactions in a month than most
-            countries see in a year. When it degrades — as UPI did for roughly five hours on 12 April
-            2025 — citizens find out from social media, not a dashboard. NPCI's own uptime reporting
+            countries see in a year. When it degrades, as UPI did for roughly five hours on 12 April
+            2025, citizens find out from social media, not a dashboard. NPCI's own uptime reporting
             updates monthly; no cross-rail, real-time, independently operated monitor exists today.
           </p>
           <p>
-            DPI Sentinel measures what's honestly measurable from outside — public-surface availability
-            and latency, in real time — and is explicit about what it can't see: real transaction
+            DPI Sentinel measures what's honestly measurable from outside: public-surface availability
+            and latency, in real time. It is equally explicit about what it cannot see, namely real transaction
             settlement, which lives inside banks and PSPs. We'd rather show a transparent simulation
             than a confident-looking number we can't stand behind.
           </p>
         </div>
+      </section>
+
+      {/* Terms. Native <details> so it's on the page without pushing the
+          register itself below the fold; no accordion component needed.
+          The clauses describe what this system actually does (per-IP rate
+          limiting, self-reported transaction refs, the simulation layer) —
+          boilerplate terms that contradicted the methodology would be worse
+          than none. */}
+      <section className="terms">
+        <details>
+          <summary>
+            <span className="terms-summary-title">Terms of Use and Disclaimers</span>
+            <span className="terms-summary-hint">read before relying on anything here</span>
+          </summary>
+
+          <div className="terms-body">
+            <p className="terms-updated">Last updated 25 July 2026. Version 1.0.</p>
+
+            <h3>1. What this service is</h3>
+            <p>
+              DPI Sentinel is an independent, non-commercial research prototype that monitors the
+              public-facing availability of selected Indian digital public infrastructure. It is
+              provided for public-interest, informational and research purposes only. It is not a
+              commercial product, not a certification authority, and not a regulated financial
+              service.
+            </p>
+
+            <h3>2. No affiliation or endorsement</h3>
+            <p>
+              DPI Sentinel is not affiliated with, endorsed by, authorised by, or operated on behalf
+              of the National Payments Corporation of India (NPCI), the Ministry of Electronics and
+              Information Technology (MeitY), the Unique Identification Authority of India (UIDAI),
+              the Reserve Bank of India, or any bank or payment service provider. All product names,
+              logos and trademarks referenced remain the property of their respective owners and are
+              used for identification only.
+            </p>
+
+            <h3>3. What is measured, and what is not</h3>
+            <p>
+              Availability and latency shown on this page are derived from synthetic HTTP and TLS
+              probes run by independent witness services against each rail's public-facing surface.
+              They describe the reachability of that public surface only. They do not measure, and
+              must not be read as measuring, transaction settlement, funds movement, bank-side
+              processing, or the outcome of any individual payment or document request.
+            </p>
+            <p>
+              Any figure labelled <strong>simulated</strong> on this page, including transaction
+              success rate, is a calibrated simulation layer and is not live settlement data. No
+              party outside a bank or payment service provider has settlement-level visibility, and
+              this project does not claim to.
+            </p>
+
+            <h3>4. Accuracy and availability</h3>
+            <p>
+              This service is provided on an "as is" and "as available" basis, without warranties of
+              any kind, whether express or implied, including any warranty of accuracy,
+              completeness, fitness for a particular purpose, or uninterrupted availability. Probe
+              results can be affected by network conditions, geography, rate limiting, and
+              maintenance on either side. A rail shown as operational may still be failing for some
+              users, and a rail shown as degraded may be reachable for others.
+            </p>
+            <p>
+              A status of <strong>insufficient data</strong> means the system cannot confirm the
+              state of a rail either way. It is never an all-clear.
+            </p>
+
+            <h3>5. Evidence Certificates</h3>
+            <p>
+              An Evidence Certificate attests to one thing only: that this system's witness quorum
+              recorded an infrastructure incident on the named rail during the stated time window.
+              It does not confirm, and cannot confirm, that any particular transaction failed,
+              succeeded, or was affected. Any transaction reference included in a certificate is
+              self-reported by the requester, is stored and displayed as unverified, and is not
+              checked against any bank or payment network.
+            </p>
+            <p>
+              Certificates are issued only for windows where the consensus process actually declared
+              an incident. There is no manual override or administrative issuance path. A
+              certificate carries no legal status of its own, and whether any bank, ombudsman,
+              regulator or court gives it any weight is entirely at their discretion.
+            </p>
+
+            <h3>6. Not professional advice</h3>
+            <p>
+              Nothing on this page constitutes legal, financial, or regulatory advice. The outage
+              guidance shown during an incident is general information, not instructions for your
+              specific situation. Always follow your bank's official channels, and treat unsolicited
+              calls about an outage as potential fraud regardless of what this page shows.
+            </p>
+
+            <h3>7. Data collected</h3>
+            <p>
+              This prototype does not use accounts, logins, advertising, or third-party analytics. If
+              you request an Evidence Certificate, the time you claim and any transaction reference
+              you enter are stored as part of the issued document. Requester IP addresses are held
+              transiently in memory for rate limiting only, and are not written to the permanent
+              record. Do not submit information you are not willing to have stored in a document you
+              may then share onward.
+            </p>
+
+            <h3>8. Acceptable use</h3>
+            <p>
+              You may read, share, and independently verify anything published here. You may not
+              present certificates or figures from this service as originating from NPCI, MeitY,
+              UIDAI, any bank, or any regulator; alter a certificate and present it as genuine; or
+              use this service to harass any operator or to imply wrongdoing that the data does not
+              support.
+            </p>
+
+            <h3>9. Limitation of liability</h3>
+            <p>
+              To the maximum extent permitted by applicable law, the operators of this project accept
+              no liability for any loss or damage arising from reliance on the information presented
+              here, including any financial loss, missed transaction, or dispute outcome.
+            </p>
+
+            <h3>10. Changes and contact</h3>
+            <p>
+              These terms may change as the project develops; the version and date above indicate the
+              current revision. Questions, corrections, and takedown or accuracy disputes from any
+              named operator are welcome and will be acted on: contact{" "}
+              <span className="terms-contact">[add your contact email before publishing]</span>.
+              These terms are governed by the laws of India.
+            </p>
+          </div>
+        </details>
       </section>
 
       <footer className="site-footer">
@@ -414,7 +540,7 @@ export default function App() {
         DPI Sentinel is an independent, non-commercial research project, built for the SIPS 2026 summit.
         Availability and latency figures are measured live via synthetic probes against each rail's
         public-facing surface. Transaction-level success-rate figures are a calibrated simulation layer,
-        not live settlement data — no outside party has bank or PSP-side visibility into real transaction
+        not live settlement data. No outside party has bank or PSP-side visibility into real transaction
         outcomes. This distinction is stated plainly because an accountability tool that hides its own
         limitations isn't one worth trusting.
       </footer>

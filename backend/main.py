@@ -373,9 +373,9 @@ def get_methodology():
             "Availability and latency are measured live, via real synthetic "
             "HTTPS probes against each rail's public-facing surface, on a "
             "fixed interval. Transaction-level success-rate is a calibrated "
-            "simulation layer — no outside party has bank/PSP-side settlement "
-            "visibility — calibrated against publicly documented incidents, "
-            "and always labeled as such. We believe stating this plainly is "
+            "simulation layer. No outside party has bank/PSP-side settlement "
+            "visibility. The simulation is calibrated against publicly documented incidents "
+            "and is always labeled as such. We believe stating this plainly is "
             "part of the product, not a caveat to hide."
         ),
         "thresholds": {
@@ -538,7 +538,7 @@ def post_certificate(body: CertificateRequest, request: Request):
         raise HTTPException(
             status_code=429,
             detail=(
-                f"Too many certificate requests from this address — limited to "
+                f"Too many certificate requests from this address. The limit is "
                 f"{certificates.CERT_RATE_LIMIT_MAX} per "
                 f"{int(certificates.CERT_RATE_LIMIT_WINDOW_SECONDS // 60)} minutes. "
                 f"Please try again later."
@@ -565,7 +565,7 @@ def post_certificate(body: CertificateRequest, request: Request):
                     f"No quorum-confirmed incident on {rail.name} covers "
                     f"{claimed_ts.isoformat()}. Certificates are only issued for time "
                     f"windows where independent witness consensus actually declared a "
-                    f"degradation — there is no way to generate one for a quiet window."
+                    f"degradation, and there is no way to generate one for a quiet window."
                 ),
             )
 

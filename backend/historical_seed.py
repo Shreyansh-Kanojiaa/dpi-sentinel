@@ -15,7 +15,7 @@ from models import Rail, Incident, IncidentEvent
 HISTORICAL_INCIDENTS = [
     {
         "rail_slug": "upi",
-        "title": "UPI transaction success rate degradation — 12 April 2025",
+        "title": "UPI transaction success rate degradation, 12 April 2025",
         "severity": "critical",
         "status": "resolved",
         "started_at": datetime(2025, 4, 12, 11, 40),
@@ -28,7 +28,7 @@ HISTORICAL_INCIDENTS = [
             "80% for the following three hours before full resolution. NPCI "
             "attributed the disruption to a surge in 'Check Transaction Status' "
             "API calls. We could not independently verify these figures against a "
-            "primary NPCI dataset — this entry represents best-available public "
+            "primary NPCI dataset. This entry represents best-available public "
             "reporting, presented as historical context, not a live measurement."
         ),
         "events": [
@@ -46,8 +46,21 @@ def seed_historical_incidents(db):
         rail = db.query(Rail).filter_by(slug=spec["rail_slug"]).first()
         if not rail:
             continue
-        existing = db.query(Incident).filter_by(rail_id=rail.id, title=spec["title"]).first()
+        # Identity is (rail, started_at), never the title. Title and
+        # source_note are display copy: keying idempotency on the title meant
+        # any wording edit no longer matched the stored row, so seeding
+        # inserted a SECOND copy of the same incident instead of updating it
+        # (this actually happened when the title was reworded). started_at is
+        # the fixed historical fact, so it is the stable key.
+        existing = (
+            db.query(Incident)
+            .filter_by(rail_id=rail.id, started_at=spec["started_at"], is_historical=True)
+            .first()
+        )
         if existing:
+            existing.title = spec["title"]
+            existing.source_note = spec["source_note"]
+            db.commit()
             continue
         incident = Incident(
             rail_id=rail.id,

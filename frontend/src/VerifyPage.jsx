@@ -19,7 +19,7 @@ const CHECK_META = {
   },
   checkpoint_anchor: {
     title: "External checkpoint anchor",
-    explains: "Do the cited checkpoint roots match the copies committed to the external git repository — not just the aggregator's own database?",
+    explains: "Do the cited checkpoint roots match the copies committed to the external git repository, not just the aggregator's own database?",
   },
 };
 
@@ -60,10 +60,10 @@ export default function VerifyPage() {
       try {
         bundle = JSON.parse(raw);
       } catch {
-        throw new Error("That doesn't parse as JSON — paste or upload the exact certificate file that was downloaded.");
+        throw new Error("That doesn't parse as JSON. Paste or upload the exact certificate file that was downloaded.");
       }
       if (!bundle.certificate || !bundle.signature) {
-        throw new Error('Expected a bundle with "certificate" and "signature" fields — the file exactly as issued.');
+        throw new Error('Expected a bundle with "certificate" and "signature" fields. Use the file exactly as issued.');
       }
       setResult(await api.verifyCertificate(bundle));
     } catch (err) {
@@ -76,15 +76,14 @@ export default function VerifyPage() {
   return (
     <div className="page page--narrow">
       <header style={{ marginBottom: 28 }}>
-        <div className="eyebrow">
-          DPI Sentinel · <a href="#/">back to status page</a>
-        </div>
-        <h1 className="masthead-title" style={{ fontSize: 32 }}>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>DPI Sentinel</div>
+        <a className="btn-ghost" href="#/">← Back to status page</a>
+        <h1 className="masthead-title" style={{ fontSize: 32, marginTop: 18 }}>
           Verify an Evidence Certificate
         </h1>
         <div className="masthead-sub" style={{ maxWidth: 620 }}>
           Paste or upload a certificate file, exactly as it was downloaded. It doesn't matter where the
-          file came from or who forwarded it — validity is re-derived from the cryptography, not from
+          file came from or who forwarded it. Validity is re-derived from the cryptography, not from
           trusting the sender.
         </div>
       </header>
@@ -111,8 +110,8 @@ export default function VerifyPage() {
         <section style={{ marginTop: 28 }}>
           <div className={`verdict-banner ${result.valid ? "verdict-banner--valid" : "verdict-banner--invalid"}`}>
             {result.valid
-              ? "VALID — every evaluable check passed"
-              : `INVALID — failed: ${result.failed_checks.join(", ")}`}
+              ? "VALID: every evaluable check passed"
+              : `INVALID: failed ${result.failed_checks.join(", ")}`}
           </div>
 
           <div>
@@ -125,7 +124,7 @@ export default function VerifyPage() {
             Verified against aggregator identity{" "}
             <span style={{ fontFamily: "var(--font-mono)" }}>{result.aggregator_public_key_hex?.slice(0, 16)}…</span>.
             A certificate only ever attests that an infrastructure incident was confirmed by witness
-            quorum during its window — never the outcome of any individual transaction.
+            quorum during its window, never the outcome of any individual transaction.
           </div>
         </section>
       )}

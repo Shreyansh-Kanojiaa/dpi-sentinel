@@ -44,7 +44,7 @@ function CertificateResult({ bundle }) {
     <div className="cert-result">
       <span className="stamp stamp--green stamp--tilt stamp--in">Certificate issued</span>
       <div style={{ fontSize: 12, color: "var(--ink-soft)", margin: "10px 0 2px", lineHeight: 1.55 }}>
-        Signed by the aggregator's Ed25519 identity. Download the bundle below — that file is what you
+        Signed by the aggregator's Ed25519 identity. Download the bundle below. That file is what you
         forward to your bank or the ombudsman, and anyone can independently verify it on the{" "}
         <a href="#/verify">verify page</a>.
       </div>
@@ -55,7 +55,7 @@ function CertificateResult({ bundle }) {
         {row("incident window", `${fmt(cert.incident_window.started_at)} → ${cert.incident_window.ongoing ? "ongoing" : fmt(cert.incident_window.resolved_at)}`)}
         {row("witness quorum", q.reporting_count != null
           ? `${(q.unhealthy_witness_ids || []).length} of ${q.reporting_count} reporting witnesses (${(q.unhealthy_witness_ids || []).join(", ")}) marked the rail unhealthy`
-          : "—")}
+          : "not recorded")}
         {row("your claimed time", fmt(cert.claimed_timestamp))}
         {row("your transaction ref", cert.claimed_transaction_ref.value
           ? <span>{cert.claimed_transaction_ref.value}{" "}
@@ -103,7 +103,7 @@ export default function OutageCopilot({ rail }) {
 
   return (
     <div className="copilot" onClick={(e) => e.stopPropagation()}>
-      <div className="copilot-title">Outage copilot — {rail.name} is degraded right now</div>
+      <div className="copilot-title">Outage copilot: {rail.name} is degraded right now</div>
 
       <div className="copilot-steps">
         <div>
@@ -112,7 +112,7 @@ export default function OutageCopilot({ rail }) {
           debits for the same purchase. Wait a few minutes and check this page before trying again.
         </div>
         <div>
-          <strong>Check whether the money actually left your account</strong> — open your bank's own
+          <strong>Check whether the money actually left your account.</strong> Open your bank's own
           app or look for the debit SMS, not the UPI app's spinner. A "failed" screen with a real
           debit usually auto-reverses; note the time and transaction reference if it doesn't.
         </div>
@@ -133,7 +133,7 @@ export default function OutageCopilot({ rail }) {
         <form onSubmit={submit} className="copilot-form">
           <div className="copilot-form-note">
             A signed, verifiable record that this incident was confirmed by independent witness
-            quorum — usable as supporting evidence in a bank dispute or RBI ombudsman complaint.
+            quorum, usable as supporting evidence in a bank dispute or RBI ombudsman complaint.
           </div>
           <label>
             Rail
@@ -149,7 +149,7 @@ export default function OutageCopilot({ rail }) {
             />
           </label>
           <label>
-            Transaction reference (optional — recorded as self-reported, not verified)
+            Transaction reference (optional, recorded as self-reported and not verified)
             <input
               value={txnRef}
               onChange={(e) => setTxnRef(e.target.value)}

@@ -10,7 +10,11 @@
   --paper-raised: #F3F1EA;
   --ink: #141C2B;
   --ink-soft: #3D4457;
-  --stone: #7C7F8E;
+  /* Secondary text. Was #7C7F8E, which measured 3.8:1 on --paper and so
+     failed WCAG AA (4.5:1) at the 10-12px sizes it's used at throughout.
+     This is 6.1:1. Most of the page's small print inherits from here, so
+     the fix belongs at the variable, not at each call site. */
+  --stone: #5A5F70;
   --stone-line: #E0DED4;
   --green: #17694E;
   --green-dim: #E4EEE8;
@@ -236,22 +240,23 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   animation: dot-pulse 2.4s ease-in-out infinite;
   --dot: var(--green);
 }
-/* Primary route to the certificate verifier — the footer link still
-   exists for readers who scroll, this makes it reachable from the top. */
-.masthead-nav {
-  display: inline-block;
-  margin-top: 12px;
+/* The two cross-page routes (status <-> verify) render as real controls
+   rather than prose links — an underlined phrase reads as body text and
+   gets skipped at a glance. Reuses the existing .btn-* system instead of
+   inventing a separate nav style; uppercase mono matches the stamps, so
+   they read as things you press. */
+a.btn-primary, a.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-decoration: none;
   font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.03em;
-  color: var(--ink-soft);
-  border-bottom: 1px solid currentColor;
-  padding-bottom: 1px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
-.masthead-nav:hover { color: var(--ink); }
-@media (max-width: 620px) {
-  .masthead-nav { justify-content: flex-start; }
-}
+.masthead-nav { margin-top: 12px; }
 
 .error-banner {
   background: var(--rust-dim);
@@ -580,6 +585,68 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   color: var(--stone);
   line-height: 1.65;
 }
+/* Terms block. Collapsed by default via native <details>; the register
+   stays the page, but the legal copy is present and printable. */
+.terms {
+  margin: 40px 0 8px;
+  border-top: 1px solid var(--stone-line);
+  padding-top: 18px;
+}
+.terms summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+.terms summary::-webkit-details-marker { display: none; }
+.terms summary::before {
+  content: "▸";
+  color: var(--stone);
+  font-size: 11px;
+}
+.terms details[open] summary::before { content: "▾"; }
+.terms-summary-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.terms-summary-hint {
+  font-size: 11.5px;
+  color: var(--stone);
+}
+.terms-body {
+  margin-top: 16px;
+  max-width: 760px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+.terms-body h3 {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 20px 0 5px;
+}
+.terms-body p { margin: 0 0 9px; }
+.terms-updated {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--stone);
+}
+.terms-contact {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: var(--amber-dim);
+  padding: 1px 5px;
+}
+
 .site-footer .verify-link {
   margin-bottom: 12px;
   font-size: 12.5px;

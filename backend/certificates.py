@@ -282,7 +282,7 @@ def verify_certificate(certificate: dict, signature_hex: str) -> dict:
         VerifyKey(bytes.fromhex(public_key_hex())).verify(digest, bytes.fromhex(signature_hex))
         checks["signature"] = {
             "passed": True,
-            "detail": "Ed25519 signature verifies against the aggregator's identity key — this exact document, byte for byte, is what the aggregator signed.",
+            "detail": "Ed25519 signature verifies against the aggregator's identity key. This exact document, byte for byte, is what the aggregator signed.",
         }
     except (BadSignatureError, ValueError):
         checks["signature"] = {
@@ -315,14 +315,14 @@ def verify_certificate(certificate: dict, signature_hex: str) -> dict:
     if not evidence:
         checks["inclusion_proofs"] = {
             "passed": None,
-            "detail": "Certificate cites no log entries — nothing to check.",
+            "detail": "Certificate cites no log entries, so there is nothing to check.",
         }
     elif not proven:
         checks["inclusion_proofs"] = {
             "passed": None,
             "detail": (
                 f"All {len(evidence)} cited log entries were still awaiting a "
-                "checkpoint when this certificate was issued — no proofs to check yet."
+                "checkpoint when this certificate was issued, so there are no proofs to check yet."
             ),
         }
     elif failures:
@@ -345,7 +345,7 @@ def verify_certificate(certificate: dict, signature_hex: str) -> dict:
     if not cited_ckpts:
         checks["checkpoint_anchor"] = {
             "passed": None,
-            "detail": "No checkpoint cited (no proven log entries) — nothing to anchor-check.",
+            "detail": "No checkpoint cited (no proven log entries), so there is nothing to anchor-check.",
         }
     else:
         anchor_failures: list[str] = []
@@ -366,7 +366,7 @@ def verify_certificate(certificate: dict, signature_hex: str) -> dict:
                 anchor_unknown.append(f"{label}: no git-anchored copy found to cross-check")
             elif git_ckpt.get("merkle_root") != c["merkle_root"]:
                 anchor_failures.append(
-                    f"{label}: cited root does not match the git-anchored copy — "
+                    f"{label}: cited root does not match the git-anchored copy. "
                     f"the certificate's checkpoint disagrees with the externally published one"
                 )
             else:

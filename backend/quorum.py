@@ -232,7 +232,7 @@ def apply_quorum_incident_logic(db: Session, rail: Rail, snapshot: dict) -> Inci
             label="Resolved",
             narrative=(
                 f"Quorum recovered: {snapshot['reporting_count']} witnesses reporting, "
-                f"{snapshot['agreement_fraction']:.0%} now unhealthy — below the "
+                f"{snapshot['agreement_fraction']:.0%} now unhealthy, below the "
                 f"{AGREEMENT_SUPERMAJORITY_FRACTION:.0%} threshold."
             ),
         )
