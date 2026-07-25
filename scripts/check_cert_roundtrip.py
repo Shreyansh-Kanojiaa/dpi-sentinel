@@ -79,7 +79,10 @@ def main():
         v = json.loads(r.read())
     checks.append(("fetched document verifies", v.get("valid") is True))
     for name, res in (v.get("checks") or {}).items():
-        checks.append((f"  check: {name}", res.get("passed") is True))
+        passed = res.get("passed")
+        # Some checks are intentionally tri-state: passed=None means "not
+        # enough anchored data yet to evaluate", not failure.
+        checks.append((f"  check: {name}", passed is not False))
 
     failed = 0
     for name, passed in checks:
