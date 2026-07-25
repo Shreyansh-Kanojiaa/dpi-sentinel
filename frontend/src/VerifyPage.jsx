@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api";
+import QrScanner from "./QrScanner";
 
 // Certificate verification page (#/verify). Deliberately trusts NOTHING
 // about how the certificate file reached this browser — email attachment,
@@ -22,6 +23,24 @@ const CHECK_META = {
     explains: "Do the cited checkpoint roots match the copies committed to the external git repository, not just the aggregator's own database?",
   },
 };
+
+// Pull a certificate reference out of arbitrary text: a pasted id, a URL
+// copied off paper, or a string decoded from a scanned QR code.
+//
+// SECURITY: the scanned case is attacker-controlled — anyone can print a QR
+// code. This extracts the id and the fingerprint and discards EVERYTHING
+// else, origin included, so nothing downstream ever learns what host the
+// text named. Never navigate to the text, and never use its origin as a
+// fetch base: a forged certificate could then point a bank clerk's browser
+// at a look-alike page that simply prints VALID.
+function parseCertificateRef(text) {
+  const id = text.match(/\b[0-9a-f]{32}\b/i);
+  if (!id) return null;
+  // Whitespace is allowed inside the fingerprint: a printed URL wraps across
+  // lines and copying it back reintroduces the break. claimedFp strips it.
+  const fp = text.match(/[?&]f=([0-9a-f][0-9a-f\s]{0,80})/i);
+  return { id: id[0].toLowerCase(), fingerprint: fp ? fp[1] : null };
+}
 
 function CheckRow({ name, result }) {
   const meta = CHECK_META[name] || { title: name, explains: "" };
@@ -47,9 +66,12 @@ export default function VerifyPage({ certificateId = null, fingerprint = null })
   const [result, setResult] = useState(null);
   const [fetched, setFetched] = useState(null);
 
-  // Fingerprint quoted by a pasted URL, as opposed to one that arrived in the
-  // route. Same meaning, different transport.
-  const [pastedFingerprint, setPastedFingerprint] = useState(null);
+  // The fingerprint claimed by whatever named the certificate currently on
+  // screen: the route, a pasted URL, or a scanned QR code. It is set by the
+  // SAME call that loads the document, so it can never belong to a previous
+  // one (see loadAndVerify).
+  const [claimedFingerprint, setClaimedFingerprint] = useState(null);
+  const [scanning, setScanning] = useState(false);
 
   const onFile = async (e) => {
     const f = e.target.files?.[0];
@@ -92,13 +114,22 @@ export default function VerifyPage({ certificateId = null, fingerprint = null })
     try {
       const bundle = await api.getCertificate(id);
       setFetched(bundle);
-      setPastedFingerprint(fp);
+      setClaimedFingerprint(fp);
       // Show the document that was actually verified, so it can be read,
       // copied and re-checked rather than taken on trust.
       setRaw(JSON.stringify(bundle, null, 2));
       setResult(await api.verifyCertificate(bundle));
     } catch (err) {
-      setError(err.message);
+      // A 404 is NOT a verdict. Name both possible causes and assert neither;
+      // reading it as "invalid" would be exactly the overclaim this project
+      // exists to argue against.
+      setError(
+        err.status === 404
+          ? "This aggregator has no certificate on record with that id. That can mean the id was " +
+            "misread, or that the paper is not from this service. The id printed beneath the code " +
+            "is 32 characters of 0-9 and a-f."
+          : err.message
+      );
     } finally {
       setBusy(false);
     }
@@ -113,12 +144,9 @@ export default function VerifyPage({ certificateId = null, fingerprint = null })
       // Not JSON. The most likely reason is someone holding only the printed
       // certificate, copying the id or the verify address off the page. Both
       // resolve to the same document the QR code points at.
-      const id = text.match(/\b[0-9a-f]{32}\b/i);
-      if (id) {
-        // Allow whitespace inside the captured fingerprint: a URL copied off
-        // the printed page is wrapped across lines. claimedFp strips it.
-        const fp = text.match(/[?&]f=([0-9a-f][0-9a-f\s]{0,80})/i);
-        loadAndVerify(id[0].toLowerCase(), fp ? fp[1] : null);
+      const ref = parseCertificateRef(text);
+      if (ref) {
+        loadAndVerify(ref.id, ref.fingerprint);
         return;
       }
       setError(
@@ -134,9 +162,23 @@ export default function VerifyPage({ certificateId = null, fingerprint = null })
     runVerify(bundle);
   };
 
+  // A scanned QR is attacker-controllable paper. Take the id and the
+  // fingerprint out of it and throw the rest away. NEVER navigate to this
+  // string and NEVER use its origin as a fetch base: a forged certificate
+  // could then point a clerk's browser at a page that just prints VALID.
+  // Returning false means "read, but not ours" and keeps the scanner looking.
+  const onScanText = (text) => {
+    const ref = parseCertificateRef(text);
+    if (!ref) return false;
+    loadAndVerify(ref.id, ref.fingerprint);
+    return true;
+  };
+
   // Arrived from a scanned QR code (#/verify/<id>?f=<fp>).
   useEffect(() => {
-    if (certificateId) loadAndVerify(certificateId, null);
+    // The route is just another caller: it passes ITS fingerprint into the
+    // load, so the comparison can never outlive the document it belongs to.
+    if (certificateId) loadAndVerify(certificateId, fingerprint);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [certificateId]);
 
@@ -152,7 +194,12 @@ export default function VerifyPage({ certificateId = null, fingerprint = null })
   // a false "mismatch" on a genuine certificate, which is worse than useless
   // on a document whose whole job is to be trusted. Stripping non-hex cannot
   // turn a wrong fingerprint into a right one, so this loses no safety.
-  const claimedFp = (fingerprint || pastedFingerprint || "").replace(/[^0-9a-f]/gi, "").toLowerCase() || null;
+  // Read ONLY from the per-load state, never from the route prop directly.
+  // The route prop is passed into loadAndVerify instead. Preferring the prop
+  // here would let a stale route fingerprint be compared against a document
+  // loaded later by a scan or a paste, producing a "mismatch" warning on two
+  // perfectly genuine certificates.
+  const claimedFp = (claimedFingerprint || "").replace(/[^0-9a-f]/gi, "").toLowerCase() || null;
   const fpMatch =
     claimedFp == null || fetched == null
       ? null
@@ -215,6 +262,26 @@ export default function VerifyPage({ certificateId = null, fingerprint = null })
         <button className="btn-primary" onClick={verify} disabled={busy || !raw.trim()}>
           {busy ? "Verifying…" : "Verify certificate"}
         </button>
+        <button
+          type="button"
+          className="btn-ghost"
+          aria-expanded={scanning}
+          onClick={() => {
+            // Clear any previous verdict when opening the scanner. Otherwise a
+            // VALID banner from an earlier document stays on screen while a
+            // new code is being scanned, and a junk QR appears to have
+            // verified. A stale verdict next to a fresh scan is exactly the
+            // kind of ambiguity this page must not produce.
+            if (!scanning) {
+              setResult(null);
+              setFetched(null);
+              setError(null);
+            }
+            setScanning((v) => !v);
+          }}
+        >
+          {scanning ? "Close scanner" : "Scan QR code"}
+        </button>
         <label className="verify-upload">
           {/* PDFs are accepted by the picker on purpose: someone holding only
               the printed copy will try it, and onFile then explains what to
@@ -223,6 +290,11 @@ export default function VerifyPage({ certificateId = null, fingerprint = null })
           <input type="file" accept=".json,application/json,.pdf,application/pdf" onChange={onFile} />
         </label>
       </div>
+
+      {/* Mounts only on an explicit click: that satisfies iOS Safari's
+          user-gesture requirement for play(), and means the camera is never
+          live unless somebody asked for it. */}
+      {scanning && <QrScanner onText={onScanText} onClose={() => setScanning(false)} />}
 
       {error && <div className="copilot-error">{error}</div>}
 

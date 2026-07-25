@@ -38,6 +38,13 @@ html, body, #root {
   min-height: 100%;
 }
 
+/* The verdict stamp flies in at 3x, and a transform still contributes to the
+   scrollable overflow area: on a phone that flashed a horizontal scrollbar and
+   let the page be dragged sideways mid-animation. "clip" rather than "hidden"
+   because hidden would turn this into a scroll container and break the page's
+   normal vertical scrolling. */
+html, body { overflow-x: clip; }
+
 body {
   background: var(--paper);
   color: var(--ink);
@@ -725,6 +732,93 @@ a.btn-primary, a.btn-ghost {
 }
 .cert-print-hint { flex-basis: 100%; margin: 0; font-size: 11.5px; color: var(--stone); line-height: 1.55; }
 
+/* The document sheet. A ruled, bordered form rather than a printed web page.
+   Everything here must survive Chrome's "Background graphics" being OFF, so
+   structure comes from borders and rules, never from fills. */
+.cert-doc {
+  border: 1.5px solid var(--ink);
+  padding: 22px 24px 16px;
+  max-width: 720px;
+}
+.cert-letterhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  flex-wrap: wrap;
+  position: relative;
+  border-bottom: 2.5px solid var(--ink);
+  padding-bottom: 12px;
+}
+/* The register's double rule, same trick as .masthead::after */
+.cert-letterhead::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -4px;
+  border-bottom: 1px solid var(--ink);
+}
+.cert-issuer {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.cert-issuer-sub {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--stone);
+  margin-top: 3px;
+}
+.cert-titleblock { margin: 16px 0 12px; }
+.cert-doc-title {
+  font-family: var(--font-display);
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 6px;
+}
+.cert-refline {
+  display: flex;
+  gap: 26px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.cert-reflabel {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--stone);
+  margin-right: 4px;
+}
+.cert-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--stone-line);
+  margin-top: 14px;
+  padding-top: 8px;
+  font-size: 9.5px;
+  color: var(--stone);
+  line-height: 1.5;
+}
+/* Free-text values (a pasted transaction ref, a long witness list) must not
+   be able to buy a second page. Full values stay in the signed JSON. */
+.cert-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* An unbroken 400-character token has no wrap opportunity and would stretch
+     the row past the sheet, pushing content off the page rather than clamping. */
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
 .cert-sheet-head {
   display: flex;
   justify-content: space-between;
@@ -743,17 +837,26 @@ a.btn-primary, a.btn-ghost {
   margin: 6px 0 0;
 }
 
+/* Centred column: the code reads as the document's seal, sitting on the
+   centre line with its caption beneath, rather than as a sidebar illustration. */
 .cert-qr-block {
   display: flex;
-  gap: 22px;
-  align-items: flex-start;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 12px;
   margin: 24px 0;
   padding: 18px;
   border: 1px solid var(--stone-line);
 }
 .cert-qr-wrap { background: #fff; flex-shrink: 0; line-height: 0; }
-.cert-qr-text { flex: 1; min-width: 240px; font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
+.cert-qr-text {
+  max-width: 520px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
 .cert-qr-text p { margin: 8px 0 0; }
 .cert-qr-url {
   margin-top: 6px;
@@ -818,13 +921,61 @@ a.btn-primary, a.btn-ghost {
    print-color-adjust only helps if the reader opts in. Therefore the printed
    certificate must be fully legible from borders and ink alone; colour is a
    bonus and never load-bearing. */
-@page { size: A4; margin: 16mm 14mm; }
+@page { size: A4; margin: 12mm; }   /* tighter than screen: the sheet must fit one page */
 
 @media print {
-  .no-print, .site-footer, .terms { display: none !important; }
+  /* .no-print now also carries the screen-only prose and the technical
+     appendix: paper holds no signature, so the appendix on paper was never
+     the verifiable artifact. It stays on screen, in the signed JSON, and
+     behind the QR. This is what makes the sheet exactly one page, and makes
+     the page count independent of how many log entries an incident produced. */
+  .no-print, .site-footer, .terms, .cert-appendix { display: none !important; }
 
-  body { background: #fff; font-size: 10.5pt; }
+  body { background: #fff; font-size: 10pt; }
   .page, .page--narrow { max-width: none; padding: 0; }
+
+  /* The sheet fills the page: its own border is the document's frame. */
+  .cert-doc { max-width: none; border-width: 1.5px; padding: 16px 18px 12px; }
+  .cert-doc-title { font-size: 21px; }
+  .cert-issuer { font-size: 18px; }
+  /* The sheet fills the page rather than floating in the top two-thirds.
+     A4 is 297mm; @page takes 12mm top and bottom, so 273mm is the content
+     box. 268mm leaves a little slack, because overshooting by even a
+     rounding error costs a whole second page. */
+  .cert-doc {
+    min-height: 268mm;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Absorbs the leftover height, which also parks the QR on the optical
+     centre of the page instead of leaving a void above the footer. */
+  .cert-doc .cert-qr-block { flex: 1 1 auto; margin: 18px 0; }
+  .cert-doc .cert-footer { margin-top: 0; }
+  /* Scale the code to the space it now owns. 40mm is also comfortably above
+     the size a phone camera reads reliably off paper, so this is a legibility
+     change as much as a layout one. */
+  .cert-doc .cert-qr-wrap svg { width: 40mm; height: 40mm; }
+
+  /* A4 renders around 794px, which trips the narrow-viewport rule that stacks
+     .cert-row into a column. That rule is defined LATER in this file, so a
+     bare .cert-row selector here loses on source order however correct it
+     looks. Qualifying with .cert-doc raises specificity and settles it. */
+  .cert-doc .cert-row {
+    flex-direction: row;
+    gap: 12px;
+    padding: 6.5px 0;     /* breathe: the sheet has the height to spend */
+    font-size: 10.5px;
+  }
+  .cert-doc .cert-row-label {
+    width: 132px;
+    flex-shrink: 0;
+    font-size: 8.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .cert-disclaimer { font-size: 9.5px; }
+  .cert-qr-block { margin: 12px 0; padding: 10px; }
+  .cert-qr-text { font-size: 9.5px; }
 
   /* Survive backgrounds-off */
   .cert-pre, .cert-qr-wrap, .fp-note { background: none; }
@@ -939,6 +1090,40 @@ a.btn-primary, a.btn-ghost {
   flex-wrap: wrap;
 }
 .verify-upload { font-size: 12.5px; color: var(--ink-soft); }
+
+/* QR scanner panel. Inline rather than a modal: the page is a single narrow
+   column, and on a successful scan the verdict renders in the space the
+   scanner just vacated, right where the reader is already looking. */
+.qr-scanner {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--stone-line);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.qr-video {
+  width: 100%;
+  max-width: 420px;
+  background: var(--ink);
+  display: block;
+}
+.qr-photo { font-size: 12.5px; color: var(--ink-soft); }
+.qr-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 560px;
+}
+.qr-privacy {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--stone);
+  margin: 0;
+  max-width: 560px;
+}
 .verdict-banner {
   display: inline-flex;
   align-items: center;
@@ -952,10 +1137,40 @@ a.btn-primary, a.btn-ghost {
   color: var(--stamp);
   box-shadow: inset 0 0 0 1.5px var(--paper), inset 0 0 0 3px var(--stamp);
   background: var(--paper);
-  animation: stamp-in 0.28s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  /* Its own animation rather than the smaller .stamp--in: this is the moment
+     the whole page exists for, and it should land like a stamp hitting paper
+     instead of fading in. Note the keyframes must END on the same rotation
+     the element sets below, because fill-mode "both" means the final frame
+     wins over the class rule. */
+  animation: verdict-slam 0.46s both;
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
 }
 .verdict-banner--valid   { --stamp: var(--green); transform: rotate(-1.2deg); }
 .verdict-banner--invalid { --stamp: var(--rust); transform: rotate(-1.2deg); }
+
+/* Comes in far enough out to read as travelling, accelerates into the hit,
+   overshoots past the resting size, then rebounds and settles. The brief blur
+   is what sells the speed; without it a big scale change just looks like a
+   zoom. Transform/opacity/filter only, so it stays off the layout path. */
+@keyframes verdict-slam {
+  0% {
+    transform: scale(3.1) rotate(-11deg);
+    opacity: 0;
+    filter: blur(2.5px);
+    animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.45);   /* accelerate down */
+  }
+  35% { opacity: 1; }
+  58% {
+    transform: scale(0.92) rotate(-0.2deg);                          /* impact, past target */
+    opacity: 1;
+    filter: blur(0);
+    animation-timing-function: cubic-bezier(0.3, 1.5, 0.5, 1);       /* springy rebound */
+  }
+  76% { transform: scale(1.045) rotate(-2.1deg); }
+  89% { transform: scale(0.988) rotate(-0.85deg); }
+  100% { transform: scale(1) rotate(-1.2deg); opacity: 1; filter: blur(0); }
+}
 
 .check-row {
   border-bottom: 1px solid var(--stone-line);

@@ -2,7 +2,14 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8420";
 
 async function getJSON(path) {
   const res = await fetch(`${API_BASE}${path}`);
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  if (!res.ok) {
+    // Carry the status so callers can tell "no such certificate" (404) apart
+    // from "the aggregator is unreachable", which read identically in a bare
+    // message but mean very different things to someone holding a printout.
+    const err = new Error(`${path} -> ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 

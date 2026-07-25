@@ -151,19 +151,31 @@ export default function CertificatePrint({ id }) {
         </p>
       </div>
 
-      {/* ---------- Page 1: the summary a counter clerk reads ---------- */}
-      <section className="cert-sheet">
-        <div className="cert-sheet-head">
+      {/* ---------- The document: exactly one printed page ----------
+          Page count is deliberately independent of the incident's size. The
+          appendix below is screen-only, so a flapping incident with twenty
+          log entries prints the same single sheet as a quiet one. */}
+      <section className="cert-doc">
+        <header className="cert-letterhead">
           <div>
-            <div className="eyebrow">DPI Sentinel · independent infrastructure monitor</div>
-            <h1 className="cert-sheet-title">Evidence Certificate</h1>
+            <div className="cert-issuer">DPI Sentinel</div>
+            <div className="cert-issuer-sub">
+              Independent infrastructure monitor · not affiliated with NPCI, MeitY or UIDAI
+            </div>
           </div>
+          {/* Never a verdict. This sheet was fetched, not verified. */}
           <span className="stamp stamp--green">Certificate issued</span>
+        </header>
+
+        <div className="cert-titleblock">
+          <h1 className="cert-doc-title">Evidence Certificate</h1>
+          <div className="cert-refline">
+            <span><span className="cert-reflabel">Reference</span> <span className="mono">{cert.certificate_id}</span></span>
+            <span><span className="cert-reflabel">Issued</span> {fmt(cert.issued_at)}</span>
+          </div>
         </div>
 
         <div className="cert-rows">
-          <Row label="certificate id"><span className="mono">{cert.certificate_id}</span></Row>
-          <Row label="issued at">{fmt(cert.issued_at)}</Row>
           <Row label="rail">{cert.rail.name} ({cert.rail.operator})</Row>
           <Row label="incident window">
             {fmt(cert.incident_window.started_at)} to{" "}
@@ -171,15 +183,21 @@ export default function CertificatePrint({ id }) {
           </Row>
           <Row label="severity">{cert.severity}</Row>
           <Row label="witness quorum">
-            {q.reporting_count != null
-              ? `${(q.unhealthy_witness_ids || []).length} of ${q.reporting_count} reporting witnesses (${(q.unhealthy_witness_ids || []).join(", ")}) independently marked the rail unhealthy`
-              : "not recorded"}
+            {/* Clamped in print CSS: the witness list grows with the incident
+                and the sheet must stay one page. Full list is in the JSON. */}
+            <span className="cert-clamp">
+              {q.reporting_count != null
+                ? `${(q.unhealthy_witness_ids || []).length} of ${q.reporting_count} reporting witnesses (${(q.unhealthy_witness_ids || []).join(", ")}) independently marked the rail unhealthy`
+                : "not recorded"}
+            </span>
           </Row>
           <Row label="your claimed time">{fmt(cert.claimed_timestamp)}</Row>
           <Row label="your transaction ref">
             {cert.claimed_transaction_ref.value ? (
               <>
-                {cert.claimed_transaction_ref.value}{" "}
+                {/* Requester-supplied and unbounded server-side, so clamped
+                    here. The full value stays in the signed document. */}
+                <span className="cert-clamp">{cert.claimed_transaction_ref.value}</span>{" "}
                 <em className="cert-unverified">self-reported, not verified</em>
               </>
             ) : (
@@ -205,23 +223,34 @@ export default function CertificatePrint({ id }) {
 
         <div className="cert-qr-block">
           <div className="cert-qr-wrap" data-verify-url={url}>
-            <QRCodeSVG value={url} size={132} level="M" marginSize={4} />
+            <QRCodeSVG value={url} size={104} level="M" marginSize={3} />
           </div>
           <div className="cert-qr-text">
             <strong>Scan to check this certificate against the aggregator's record.</strong>
             <div className="cert-qr-url mono">{url}</div>
             <p>
-              Fingerprint <span className="mono">{(bundle.fingerprint || "").slice(0, FP_PREFIX)}</span>{" "}
-              is the first {FP_PREFIX} hex digits of the digest this certificate's signature covers.
-            </p>
-            <p>
-              Scanning this code does not by itself prove anything. It opens the verifier, which
-              independently re-checks the aggregator's signature, the Merkle inclusion proofs, and
-              the git-anchored checkpoint roots, and reports each of the three separately.
+              Scanning proves nothing by itself: it opens the verifier, which independently
+              re-checks the aggregator's signature, the Merkle inclusion proofs and the git-anchored
+              checkpoint roots, and reports each of the three separately.
             </p>
           </div>
         </div>
 
+        <footer className="cert-footer">
+          <span>
+            Issued by the DPI Sentinel aggregator, Ed25519 key{" "}
+            <span className="mono">{(bundle.aggregator_public_key_hex || "").slice(0, 24)}…</span>
+          </span>
+          {/* Deliberately avoids the word "valid". This sheet was fetched, not
+              verified, and the one word it must never print is the one a
+              reader would take as a verdict. */}
+          <span>Issued electronically; no handwritten signature is required · page 1 of 1</span>
+        </footer>
+      </section>
+
+      {/* Screen-only from here down. Prose the sheet has no room for, kept
+          in full for anyone reading on a screen. */}
+      <div className="no-print">
         <div className="cert-howto">
           <div className="cert-appendix-sub">How to check this document</div>
           <ol>
@@ -239,9 +268,8 @@ export default function CertificatePrint({ id }) {
             rests on the witness signatures and the external checkpoint anchor, not on this page.
           </p>
         </div>
-      </section>
 
-      {/* ---------- Page 2+: the machine-checkable evidence ---------- */}
+      {/* ---------- Screen only: the machine-checkable evidence ---------- */}
       <section className="cert-appendix">
         <h2 className="cert-sheet-title" style={{ fontSize: 22 }}>Technical appendix</h2>
         <p className="cert-appendix-intro">
@@ -264,6 +292,7 @@ export default function CertificatePrint({ id }) {
           <EvidenceEntry key={e.sequence_number} entry={e} />
         ))}
       </section>
+      </div>
     </div>
   );
 }
