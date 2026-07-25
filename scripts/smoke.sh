@@ -104,11 +104,16 @@ print(f'  ok   quorum receipt present: {reporting}/{assigned} reporting, '
 " || die "quorum snapshot did not show an agreement-driven detection"
 
 log "Waiting for a checkpoint to seal the incident log so the certificate has proofs"
-wait_for 70 "checkpoint covers latest log entry" bash -c "
+CKPT_TARGET_SEQ=$(curl -sf "$API/api/log/summary" | python3 -c "
+import sys, json
+s = json.load(sys.stdin)
+print(s.get('latest_sequence_number') or 0)
+")
+wait_for 70 "checkpoint covers incident-era log entries" bash -c "
   curl -sf '$API/api/log/summary' | python3 -c \"
 import sys, json
 s = json.load(sys.stdin)
-sys.exit(0 if s.get('latest_checkpoint') and s['latest_checkpoint'].get('seq_end', 0) >= s.get('latest_sequence_number', 1) else 1)
+sys.exit(0 if s.get('latest_checkpoint') and s['latest_checkpoint'].get('seq_end', 0) >= int('$CKPT_TARGET_SEQ') else 1)
 \""
 
 log "Requesting an Evidence Certificate inside the incident window"
