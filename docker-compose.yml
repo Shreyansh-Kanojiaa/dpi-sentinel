@@ -1,11 +1,13 @@
 services:
-  # Recording aid only, not part of the product: a controllable HTTP target
-  # for the pitch video's "degraded" demo beat. Public status-code test
-  # services (httpstat.us, httpbin.org) proved unreliable, so witnesses probe
-  # this container instead. `docker compose stop demo-target` makes it
-  # unreachable -> unhealthy per quorum's agreement check (see quorum.py);
-  # `docker compose start demo-target` recovers it. No file edits needed to
-  # trigger or resolve the incident.
+  # The controllable target behind the "demo" rail (rails_config.py) — a real
+  # HTTP server we can kill, so the degraded beat is a real detection rather
+  # than a mocked one. Public status-code test services (httpstat.us,
+  # httpbin.org) proved unreliable, so witnesses probe this container instead.
+  #     docker compose stop demo-target    # -> unreachable -> degraded
+  #     docker compose start demo-target   # -> recovered -> resolved
+  # No file edits needed to trigger or resolve. It backs its OWN clearly
+  # labeled rail — never a real rail via PROBE_TARGET_OVERRIDES, which would
+  # leave UPI claiming to probe NPCI while actually hitting this nginx.
   demo-target:
     image: nginx:alpine
 
@@ -48,7 +50,7 @@ services:
     ports:
       - "8420:8420"
 
-  # Milestone 5: witness-a/b/c cover BOTH rails (UPI and DigiLocker), so
+  # Milestone 5: witness-a/b/c cover UPI, DigiLocker AND the demo rail, so
   # quorum is demonstrable on each with 3 witnesses: stopping one still
   # leaves 2/3 reporting (participation holds), stopping two drops it to 1/3
   # (participation fails -> insufficient_data). witness-d below covers ONLY
@@ -59,11 +61,17 @@ services:
   # global registered-witness count. So UPI's denominator stays 3
   # (witness-a/b/c) regardless of witness-d existing or being stopped, while
   # DigiLocker's denominator is 4 (witness-a/b/c/d).
+  #
+  # Note the two failure modes are different on purpose, and both are worth
+  # showing: stopping demo-target kills the TARGET (witnesses keep reporting,
+  # they just report it dead -> degraded), while stopping a witness kills a
+  # REPORTER (participation drops -> insufficient_data). Silence is never
+  # treated as health.
   witness-a:
     build: ./witness
     environment:
       WITNESS_ID: witness-a
-      PROBE_TARGETS: "upi:http://demo-target/,digilocker:https://www.digilocker.gov.in"
+      PROBE_TARGETS: "upi:https://www.npci.org.in,digilocker:https://www.digilocker.gov.in,demo:http://demo-target/"
       AGGREGATOR_URL: http://aggregator:8420
       PROBE_INTERVAL_SECONDS: "8"
       KEY_PATH: /keys/witness.key
@@ -79,7 +87,7 @@ services:
     build: ./witness
     environment:
       WITNESS_ID: witness-b
-      PROBE_TARGETS: "upi:http://demo-target/,digilocker:https://www.digilocker.gov.in"
+      PROBE_TARGETS: "upi:https://www.npci.org.in,digilocker:https://www.digilocker.gov.in,demo:http://demo-target/"
       AGGREGATOR_URL: http://aggregator:8420
       PROBE_INTERVAL_SECONDS: "8"
       KEY_PATH: /keys/witness.key
@@ -95,7 +103,7 @@ services:
     build: ./witness
     environment:
       WITNESS_ID: witness-c
-      PROBE_TARGETS: "upi:http://demo-target/,digilocker:https://www.digilocker.gov.in"
+      PROBE_TARGETS: "upi:https://www.npci.org.in,digilocker:https://www.digilocker.gov.in,demo:http://demo-target/"
       AGGREGATOR_URL: http://aggregator:8420
       PROBE_INTERVAL_SECONDS: "8"
       KEY_PATH: /keys/witness.key

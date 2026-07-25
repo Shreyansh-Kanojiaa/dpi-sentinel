@@ -62,13 +62,51 @@ RAILS_SEED = [
         ),
         "color": "#2D6CA3",
     },
+    {
+        # The one rail that monitors nothing real. It exists so the incident
+        # pipeline (witness consensus -> hash-chained log -> Evidence
+        # Certificate -> verification) can be demonstrated end-to-end on
+        # demand, by stopping a container we control:
+        #     docker compose stop demo-target     # -> degraded, for real
+        #     docker compose start demo-target    # -> resolved, for real
+        # The failure is injected at the SENSOR (a genuinely dead HTTP
+        # server), never at the decision — quorum, signatures, and the log
+        # run exactly as they do for UPI/DigiLocker. That's why this is a
+        # separate, clearly-labeled rail instead of a target override on a
+        # real one: a real rail must never claim to measure NPCI while
+        # actually probing our own nginx.
+        "slug": "demo",
+        "name": "Demo Rail",
+        "full_name": "Demo Rail — self-hosted test target (not a public service)",
+        "operator": "DPI Sentinel (self-hosted)",
+        "description": (
+            "Not a real rail and not a measurement of any public service. This is an "
+            "nginx container inside this deployment that we can stop and start at will, "
+            "so the detection-to-certificate pipeline can be shown working live rather "
+            "than described. Every step it triggers is real: real probes, real "
+            "signatures, real quorum, real log entries."
+        ),
+        "monitor_mode": "synthetic",
+        "probe_target": "http://demo-target/",
+        "probe_methodology": (
+            "Synthetic HTTP GET every 8s against a self-hosted nginx container, from the "
+            "same witnesses that probe the real rails. Stopping that container makes it "
+            "genuinely unreachable, which the witnesses independently observe and sign, "
+            "and which quorum then judges by the same thresholds as any other rail. "
+            "This rail says nothing about UPI, DigiLocker, or any public infrastructure."
+        ),
+        "color": "#8A7B6B",
+    },
 ]
 
 # If a real target is unreachable from a given network on demo day, swap it here —
-# nothing else in the system needs to change.
-PROBE_TARGET_OVERRIDES = {
-    "upi": "http://demo-target/",
-}
+# nothing else in the system needs to change. Keep this EMPTY by default: an
+# override silently repoints a real rail at something else while its name,
+# operator, and methodology text still claim the real target. If you use one in
+# an emergency, say so out loud during the demo. To show an outage, stop the
+# demo rail's container instead (see the "demo" rail above) — that keeps every
+# rail honest about what it is actually probing.
+PROBE_TARGET_OVERRIDES = {}
 
 
 def seed_rails(db):

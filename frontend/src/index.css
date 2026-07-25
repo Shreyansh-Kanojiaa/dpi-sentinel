@@ -236,6 +236,22 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   animation: dot-pulse 2.4s ease-in-out infinite;
   --dot: var(--green);
 }
+/* Primary route to the certificate verifier — the footer link still
+   exists for readers who scroll, this makes it reachable from the top. */
+.masthead-nav {
+  display: inline-block;
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+  border-bottom: 1px solid currentColor;
+  padding-bottom: 1px;
+}
+.masthead-nav:hover { color: var(--ink); }
+@media (max-width: 620px) {
+  .masthead-nav { justify-content: flex-start; }
+}
 
 .error-banner {
   background: var(--rust-dim);
@@ -299,6 +315,14 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   font-weight: 600;
   letter-spacing: -0.01em;
   transition: color 0.12s ease;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.rail-demo-tag {
+  font-size: 8.5px;
+  padding: 2px 6px;
 }
 .rail-operator {
   font-family: var(--font-mono);

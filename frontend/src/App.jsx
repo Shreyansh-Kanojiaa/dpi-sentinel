@@ -87,7 +87,15 @@ function RailRow({ rail, expanded, onToggle }) {
         <div className="rail-chevron">{expanded ? "▾" : "▸"}</div>
 
         <div className="rail-cell-name">
-          <div className="rail-name-display">{rail.name}</div>
+          <div className="rail-name-display">
+            {rail.name}
+            {/* A rail that isn't probing a real public service must say so
+                wherever it appears — the status dot alone reads identical to
+                a real rail's. */}
+            {rail.monitor_mode !== "live" && (
+              <span className="stamp stamp--amber rail-demo-tag">test target</span>
+            )}
+          </div>
           <div className="rail-operator">{rail.operator}</div>
         </div>
 
@@ -310,6 +318,9 @@ export default function App() {
                 "connecting…"
               )}
             </div>
+            <a className="masthead-nav" href="#/verify">
+              Verify an Evidence Certificate →
+            </a>
           </div>
         </div>
       </header>

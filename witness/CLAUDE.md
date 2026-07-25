@@ -1,0 +1,9 @@
+# witness/ — design notes
+
+Design rationale for the standalone witness service. See the root `CLAUDE.md` for the cross-cutting invariants and milestone overview.
+
+- Each witness has its own Ed25519 identity, generated once and persisted to `KEY_PATH` (a Docker volume per instance in `docker-compose.yml` — `witness-a-keys`, `witness-b-keys`, `witness-c-keys` — so keys are never shared across instances or images).
+- A witness may cover multiple targets (`PROBE_TARGETS`, see "Multi-target witnesses" above), but **each target still gets its own independent observation, hash, and signature** — never a batched payload covering more than one target. There is no `rail_slug` field on the wire; the aggregator routes purely by matching `payload.target` against `Rail.probe_target`, so sending the correct URL per probe is sufficient.
+- The signed unit is always the *canonical JSON* of one observation dict (`witness_id, timestamp, target, reachable, http_status, latency_ms, error`), hashed with SHA-256, then that hash is what gets Ed25519-signed — not the observation dict directly. Any code that needs to verify a signature must reproduce the observation dict, canonicalize it the same way (`signing.canonical_json_bytes`), hash it, and verify against that hash — never re-derive canonical form ad hoc elsewhere.
+- The signature proves authorship + integrity of a witness's report, not truthfulness of the underlying probe, and not Sybil-resistance across witnesses — that reasoning lives with the aggregator (`backend/`, see below), not here.
+- The aggregator endpoint (`POST /observations`) exists now (Milestone 2, `backend/main.py`), but `witness/prober.report_observation` is unchanged — it still treats `httpx.ConnectError`/timeouts as expected-and-logged, not exceptional. Don't add retries, queuing, or circuit breakers here; that's still explicitly deferred, and adding it here vs. in the aggregator are different decisions with different tradeoffs (see below).
