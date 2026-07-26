@@ -7,9 +7,15 @@ import { api } from "./api";
 // Certificate for the confirmed incident window.
 
 function toLocalInputValue(d) {
-  // datetime-local wants "YYYY-MM-DDTHH:MM" in local time.
+  // datetime-local wants "YYYY-MM-DDTHH:MM[:SS]" in local time. Seconds are
+  // included (with step="1" on the input) because minute precision truncates
+  // up to 59s into the PAST, and certificates.find_covering_incident requires
+  // claimed_timestamp >= incident.started_at — so the default value could fall
+  // just before a freshly-opened incident and be correctly refused. The panel
+  // only mounts once a rail is already degraded, so now-with-seconds is always
+  // inside the window.
   const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function downloadBundle(bundle) {
@@ -151,6 +157,7 @@ export default function OutageCopilot({ rail }) {
             Approximate time your transaction failed
             <input
               type="datetime-local"
+              step="1"
               required
               value={claimedTime}
               onChange={(e) => setClaimedTime(e.target.value)}

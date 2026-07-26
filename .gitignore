@@ -46,4 +46,10 @@ checkpoint-repo/
 
 # Pitch deck (kept locally, not in the repo)
 *.pptx
+
+# Presentation working documents — kept locally alongside the deck. Not part of
+# the codebase: one is a systems description written for judge questions, the
+# other is a spoken script. README.md + CLAUDE.md remain the versioned docs.
+TECHNICAL_REFERENCE.md
+DEMO_SCRIPT_5MIN.md
 .~lock.*#

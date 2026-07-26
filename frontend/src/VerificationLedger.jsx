@@ -98,7 +98,9 @@ export default function VerificationLedger() {
       <p className="ledger-intro">
         No single server decides whether a rail is up. Independent witness services each run their own
         probes and sign what they saw with their own key, and every accepted observation is appended to
-        a hash-chained log that is periodically sealed and published outside this system.
+        a hash-chained log that is periodically sealed into a git repository kept separate from the
+        application database. In production that repository is pushed to an external remote, which is
+        what puts a copy of the record beyond the operator's reach.
       </p>
 
       <h3 className="ledger-sub">Witnesses the aggregator will accept</h3>

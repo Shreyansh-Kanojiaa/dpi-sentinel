@@ -30,7 +30,7 @@ language ("Working normally", not "200 OK"), because the audience for this
 page is the person whose payment just failed, not an SRE. Every screenshot
 below is from a real run of the stack, not a mockup.
 
-## What's real vs. simulated
+## What's measured, and what isn't
 
 This is the most important thing to understand about the page, not a
 footnote:
@@ -41,18 +41,19 @@ footnote:
   key, and report it in. A rail's status — operational, degraded, or
   insufficient data — is a live consensus across whichever witnesses
   reported recently, not one server's opinion of itself.
-- **Transaction-level success rate is a calibrated simulation, and it's
-  labeled as one everywhere it appears.** No outside party — including this
-  project — has bank or PSP-side visibility into real transaction
-  settlement. That number is simulated, calibrated against publicly
-  documented incidents, and never presented as a live measurement.
+- **Transaction-level success rate is not published at all.** No outside
+  party — including this project — has bank or PSP-side visibility into real
+  transaction settlement. Rather than show an estimate dressed as a
+  measurement, the page shows nothing there and says why. What it does show
+  per rail is availability, latency, and how many signed observations that
+  figure rests on.
 - **The historical incident in the log is real**, reconstructed from public
   reporting (NPCI statements, press coverage), with a source note attached.
   We couldn't independently verify the exact figures against a primary NPCI
   dataset, and we say so rather than round the corner.
 
 An accountability tool that hides its own limitations isn't one worth
-trusting — so the line between "measured" and "simulated" is drawn
+trusting — so the line between what is measured and what cannot be is drawn
 explicitly, everywhere, on purpose.
 
 ![Expanded UPI row showing a methodology box that states the probe measures
@@ -170,8 +171,9 @@ operator of this system from quietly rewriting its own history.
 - The **aggregator** verifies those signatures and only calls a rail's
   status once a real quorum of witnesses agrees, never from one report.
 - Every verified observation and incident is written into a **tamper-evident,
-  hash-chained log**, periodically sealed and published to an external git
-  history — so no one, including the operator, can quietly rewrite past
+  hash-chained log**, periodically sealed into a git repository kept separate
+  from the application database (and, in production, pushed to an external
+  remote) — so no one, including the operator, can quietly rewrite past
   history without it being mathematically detectable.
 - **Evidence Certificates** are built directly from that log and consensus
   record, then signed — making them self-contained and independently
@@ -232,10 +234,10 @@ docker compose start demo-target   # and resolves on its own once it recovers
 ```
 
 While it is degraded, the Outage Copilot appears on the Demo Rail row and a
-certificate can be requested for that window. Give the certificate form a
-claimed time inside the incident window (the field defaults to the current
-minute, which is rounded down, so wait a moment after the incident opens or
-the request is correctly refused as falling outside it).
+certificate can be requested for that window. The form defaults to the moment
+it opened, which is inside the window; entering a time from before the
+incident started is correctly refused, since a certificate only ever covers a
+window quorum actually declared.
 
 Running pieces separately, or want to point it at your own probe targets?
 See the "Running it" section in `CLAUDE.md` for backend-only setup,
@@ -244,7 +246,8 @@ environment variables, and pre-demo network checks.
 ## What's next
 
 - Real settlement-adjacent signals via partnership with a PSP sandbox or
-  bank API program, to shrink what the simulation layer has to cover.
+  bank API program — the only honest way to say anything about transaction
+  outcomes, which is why the page says nothing about them today.
 - More rails: ONDC, ABDM/ABHA, Aadhaar/AEPS.
 - Certificate revocation, for cases where an incident is later reclassified.
 - Wider witness coverage so more rails clear quorum with room to spare.

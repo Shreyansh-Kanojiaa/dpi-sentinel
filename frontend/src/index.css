@@ -356,6 +356,12 @@ a.btn-primary, a.btn-ghost {
   margin-top: 4px;
   line-height: 1.5;
 }
+.rail-coverage {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--stone);
+  margin-top: 5px;
+}
 .rail-stat { font-family: var(--font-mono); font-size: 13.5px; }
 .rail-stat-value { display: block; }
 .rail-stat-label {
@@ -363,11 +369,6 @@ a.btn-primary, a.btn-ghost {
   font-size: 9.5px;
   color: var(--stone);
   margin-top: 1px;
-}
-.sim-flag {
-  font-style: normal;
-  color: var(--blue);
-  border-bottom: 1px dotted var(--blue);
 }
 .rail-pulse {
   display: flex;
@@ -412,7 +413,7 @@ a.btn-primary, a.btn-ghost {
 .methodology-box .target { color: var(--stone); }
 
 /* Raw metrics, relocated into the expanded rail view (Milestone: plain-language
-   default). Reuses .rail-stat / .rail-stat-value / .rail-stat-label / .sim-flag. */
+   default). Reuses .rail-stat / .rail-stat-value / .rail-stat-label. */
 .rail-metrics { flex: 1 1 260px; min-width: 0; }
 .rail-metrics-grid { display: flex; gap: 28px; flex-wrap: wrap; }
 .rail-metrics-pulse { margin-top: 18px; }

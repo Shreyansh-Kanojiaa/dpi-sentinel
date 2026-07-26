@@ -108,6 +108,13 @@ function RailRow({ rail, expanded, onToggle }) {
             {plain ? plain.headline : SEVERITY_LABEL[rail.status] || rail.status}
           </div>
           {plain && <div className="rail-plain-sub">{plain.sub}</div>}
+          {/* Milestone 5's per-rail coverage, on the row itself. The backend
+              already computed it (main.serialize_rail); leaving it only in the
+              ledger panel far below meant the thing that changes when a witness
+              goes quiet was invisible next to the status it changes. */}
+          {rail.witness_coverage && (
+            <div className="rail-coverage">{rail.witness_coverage}</div>
+          )}
         </div>
       </div>
 
@@ -135,16 +142,12 @@ function RailRow({ rail, expanded, onToggle }) {
                 <span className="rail-stat-label">avg latency</span>
               </div>
               <div className="rail-stat">
-                <span className="rail-stat-value">
-                  {u.avg_simulated_success_rate != null ? `${(u.avg_simulated_success_rate * 100).toFixed(1)}%` : "n/a"}
-                </span>
-                <span className="rail-stat-label">
-                  success rate <em className="sim-flag" title="Calibrated simulation, not live settlement data">simulated</em>
-                </span>
+                <span className="rail-stat-value">{u.sample_count ?? 0}</span>
+                <span className="rail-stat-label">signed observations · 24h</span>
               </div>
             </div>
             <div className="rail-metrics-pulse">
-              <div className="rail-stat-label" style={{ marginBottom: 6 }}>signal · live probes</div>
+              <div className="rail-stat-label" style={{ marginBottom: 6 }}>reachability · last 60 probes</div>
               <PulseStrip points={u.sparkline || []} color={rail.color} />
             </div>
           </div>
@@ -421,8 +424,8 @@ export default function App() {
           <p>
             DPI Sentinel measures what's honestly measurable from outside: public-surface availability
             and latency, in real time. It is equally explicit about what it cannot see, namely real transaction
-            settlement, which lives inside banks and PSPs. We'd rather show a transparent simulation
-            than a confident-looking number we can't stand behind.
+            settlement, which lives inside banks and PSPs. Where we can't measure, we publish nothing
+            rather than a confident-looking number we can't stand behind.
           </p>
         </div>
       </section>
@@ -430,7 +433,7 @@ export default function App() {
       {/* Terms. Native <details> so it's on the page without pushing the
           register itself below the fold; no accordion component needed.
           The clauses describe what this system actually does (per-IP rate
-          limiting, self-reported transaction refs, the simulation layer) —
+          limiting, self-reported transaction refs, what is and isn't measured) —
           boilerplate terms that contradicted the methodology would be worse
           than none. */}
       <section className="terms">
@@ -471,10 +474,11 @@ export default function App() {
               processing, or the outcome of any individual payment or document request.
             </p>
             <p>
-              Any figure labelled <strong>simulated</strong> on this page, including transaction
-              success rate, is a calibrated simulation layer and is not live settlement data. No
-              party outside a bank or payment service provider has settlement-level visibility, and
-              this project does not claim to.
+              This page deliberately publishes <strong>no</strong> transaction success-rate figure.
+              No party outside a bank or payment service provider has settlement-level visibility,
+              so any such number produced here would be an estimate wearing the clothes of a
+              measurement. Availability, latency and observation counts are what is measured, and
+              they are all that is shown.
             </p>
 
             <h3>4. Accuracy and availability</h3>
@@ -546,7 +550,9 @@ export default function App() {
               These terms may change as the project develops; the version and date above indicate the
               current revision. Questions, corrections, and takedown or accuracy disputes from any
               named operator are welcome and will be acted on: contact{" "}
-              <span className="terms-contact">[add your contact email before publishing]</span>.
+              <a className="terms-contact" href="mailto:www.shreyanshkanojia@gmail.com">
+                www.shreyanshkanojia@gmail.com
+              </a>.
               These terms are governed by the laws of India.
             </p>
           </div>
@@ -559,10 +565,10 @@ export default function App() {
         </div>
         DPI Sentinel is an independent, non-commercial research project, built for the SIPS 2026 summit.
         Availability and latency figures are measured live via synthetic probes against each rail's
-        public-facing surface. Transaction-level success-rate figures are a calibrated simulation layer,
-        not live settlement data. No outside party has bank or PSP-side visibility into real transaction
-        outcomes. This distinction is stated plainly because an accountability tool that hides its own
-        limitations isn't one worth trusting.
+        public-facing surface. No transaction success-rate figure is published here, because no outside
+        party has bank or PSP-side visibility into real transaction outcomes and a number we cannot
+        measure would only look like one we can. This limit is stated plainly because an accountability
+        tool that hides its own limitations isn't one worth trusting.
       </footer>
     </div>
   );

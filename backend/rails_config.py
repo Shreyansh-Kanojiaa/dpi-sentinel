@@ -38,8 +38,9 @@ RAILS_SEED = [
             "TLS handshake + response latency and HTTP status. This measures the "
             "availability of NPCI's public-facing infrastructure, NOT live transaction "
             "settlement, which requires bank/PSP-side visibility no outside party has. "
-            "Transaction-success-rate figures shown alongside are a calibrated simulation "
-            "(see methodology page), not live ground truth."
+            "No transaction-success-rate figure is published here for exactly that "
+            "reason — a green rail means NPCI's front door answered, not that your "
+            "payment cleared."
         ),
         "color": "#1A7A5E",
     },
@@ -57,8 +58,9 @@ RAILS_SEED = [
         "probe_target": "https://www.digilocker.gov.in",
         "probe_methodology": (
             "Synthetic HTTPS GET against DigiLocker's public web surface every 8s, "
-            "measuring reachability and latency. Document-fetch success rate is a "
-            "calibrated simulation layer, clearly labeled, not a live measurement."
+            "measuring reachability and latency. Document-fetch success rate is not "
+            "published: it lives inside DigiLocker's own systems, not on its public "
+            "surface, so nothing measurable from outside would honestly stand in for it."
         ),
         "color": "#2D6CA3",
     },

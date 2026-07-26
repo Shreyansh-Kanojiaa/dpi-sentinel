@@ -104,11 +104,22 @@ print(f'  ok   quorum receipt present: {reporting}/{assigned} reporting, '
 " || die "quorum snapshot did not show an agreement-driven detection"
 
 log "Waiting for a checkpoint to seal the incident log so the certificate has proofs"
-wait_for 70 "checkpoint covers latest log entry" bash -c "
+# Pin the sequence number the incident's entries are at or below, THEN wait for
+# a checkpoint to reach it. The previous condition compared seq_end against the
+# live latest_sequence_number, which the witnesses push forward ~10 entries every
+# 8s — so it only passed if a poll happened to land in the gap between a
+# checkpoint sealing and the next observation arriving, and otherwise timed out
+# on a system that was working correctly. What a certificate actually needs is
+# that ITS entries are sealed, which is what this asserts.
+SEQ=$(curl -sf "$API/api/log/summary" | python3 -c "
+import sys, json
+print(json.load(sys.stdin).get('latest_sequence_number', 0))")
+wait_for 120 "checkpoint seals the incident's log entries (through seq $SEQ)" bash -c "
   curl -sf '$API/api/log/summary' | python3 -c \"
 import sys, json
 s = json.load(sys.stdin)
-sys.exit(0 if s.get('latest_checkpoint') and s['latest_checkpoint'].get('seq_end', 0) >= s.get('latest_sequence_number', 1) else 1)
+cp = s.get('latest_checkpoint') or {}
+sys.exit(0 if cp.get('seq_end', 0) >= $SEQ else 1)
 \""
 
 log "Requesting an Evidence Certificate inside the incident window"

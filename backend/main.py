@@ -369,19 +369,23 @@ def post_observation(payload: SignedObservationIn):
 def get_methodology():
     return {
         "summary": (
-            "DPI Sentinel separates two layers of signal on every rail. "
-            "Availability and latency are measured live, via real synthetic "
-            "HTTPS probes against each rail's public-facing surface, on a "
-            "fixed interval. Transaction-level success-rate is a calibrated "
-            "simulation layer. No outside party has bank/PSP-side settlement "
-            "visibility. The simulation is calibrated against publicly documented incidents "
-            "and is always labeled as such. We believe stating this plainly is "
-            "part of the product, not a caveat to hide."
+            "Availability and latency are measured live, via real synthetic HTTPS "
+            "probes run by independent witnesses against each rail's public-facing "
+            "surface, each signed with the witness's own key. A rail's status is "
+            "quorum consensus across those witnesses, never one server's opinion. "
+            "Transaction-level success rate is NOT published: no outside party has "
+            "bank/PSP-side settlement visibility, so any such figure would be an "
+            "estimate wearing the clothes of a measurement. We believe stating that "
+            "limit plainly is part of the product, not a caveat to hide."
         ),
+        # The thresholds that actually decide a status today. The old
+        # success-rate bands (minor/major/critical below X) belonged to
+        # sla.detect_and_update_incidents, which quorum.py superseded in
+        # Milestone 2 — publishing them implied a decision rule nothing runs.
         "thresholds": {
-            "minor_below": 0.985,
-            "major_below": 0.90,
-            "critical_below": 0.70,
+            "min_participation_fraction": quorum.MIN_PARTICIPATION_FRACTION,
+            "agreement_supermajority_fraction": quorum.AGREEMENT_SUPERMAJORITY_FRACTION,
+            "window_seconds": quorum.WINDOW_SECONDS,
         },
     }
 

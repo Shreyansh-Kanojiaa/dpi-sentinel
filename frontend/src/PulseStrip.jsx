@@ -2,10 +2,16 @@ import React from "react";
 
 /**
  * Renders the last N probe points as a pulse strip: a thin horizontal
- * line that traces the simulated success rate, drawn over a faint
- * strip-chart graticule. Designed to read like a seismograph or ECG
- * strip rather than a dashboard chart — this is the signature visual
- * element.
+ * line that traces reachability, drawn over a faint strip-chart
+ * graticule. Designed to read like a seismograph or ECG strip rather
+ * than a dashboard chart — this is the signature visual element.
+ *
+ * It plots `reachable`, which every point carries because a witness
+ * measured it. It deliberately does NOT plot `rate` (the simulated
+ * success rate): witnesses don't report one, so that field is null on
+ * every observation, and drawing it produced a line pinned to the floor
+ * that read as a 0% signal. A strip chart of a number nobody measures is
+ * exactly the unearned precision this project argues against.
  */
 export default function PulseStrip({ points = [], color = "#17694E", height = 40, width = 220 }) {
   if (!points.length) {
@@ -30,24 +36,17 @@ export default function PulseStrip({ points = [], color = "#17694E", height = 40
   const n = padded.length;
   const stepX = width / Math.max(n - 1, 1);
 
-  const toY = (rate) => {
-    const r = rate ?? 0;
-    const clamped = Math.max(0, Math.min(1, r));
-    // Compress the y-range to 0.6..1.0 mapped across the full height, so
-    // everyday jitter (98-100%) actually produces visible texture instead
-    // of a flat line pinned at the top. Anything below 0.6 clips to the floor,
-    // which is fine — by then it's a visually obvious incident anyway.
-    const floor = 0.6;
-    const normalized = Math.max(0, (clamped - floor) / (1 - floor));
-    return height - normalized * height;
-  };
+  // Binary trace, inset from both edges so a fully-reachable run still reads
+  // as a drawn line rather than clipping against the top of the box.
+  const pad = 4;
+  const toY = (p) => (p.reachable ? pad : height - pad);
 
   const pathD = padded
-    .map((p, i) => `${i === 0 ? "M" : "L"} ${(i * stepX).toFixed(1)} ${toY(p.rate).toFixed(1)}`)
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${(i * stepX).toFixed(1)} ${toY(p).toFixed(1)}`)
     .join(" ");
 
-  const hasIncident = padded.some((p) => p.injected);
-  const strokeColor = hasIncident ? "var(--rust)" : color;
+  const hasOutage = padded.some((p) => !p.reachable);
+  const strokeColor = hasOutage ? "var(--rust)" : color;
   const last = padded[n - 1];
 
   // Vertical graticule ticks every ~28px, like the timing marks on a
@@ -56,16 +55,16 @@ export default function PulseStrip({ points = [], color = "#17694E", height = 40
   for (let x = 28; x < width; x += 28) ticks.push(x);
 
   return (
-    <svg width={width} height={height} role="img" aria-label="recent probe history">
+    <svg width={width} height={height} role="img" aria-label="recent probe reachability">
       {ticks.map((x) => (
         <line key={x} x1={x} x2={x} y1={0} y2={height} stroke="var(--stone-line)" strokeWidth={0.5} opacity={0.6} />
       ))}
-      {/* baseline reference at 98.5% threshold */}
+      {/* baseline reference at the "unreachable" floor */}
       <line
         x1={0}
         x2={width}
-        y1={toY(0.985)}
-        y2={toY(0.985)}
+        y1={height - pad}
+        y2={height - pad}
         stroke="var(--stone-line)"
         strokeWidth={1}
         strokeDasharray="2,3"
@@ -79,12 +78,12 @@ export default function PulseStrip({ points = [], color = "#17694E", height = 40
         strokeLinecap="round"
       />
       {padded.map((p, i) =>
-        p.injected ? (
-          <circle key={i} cx={i * stepX} cy={toY(p.rate)} r={2.2} fill="var(--rust)" />
+        !p.reachable ? (
+          <circle key={i} cx={i * stepX} cy={toY(p)} r={2.2} fill="var(--rust)" />
         ) : null
       )}
       {/* pen head — where the recorder is writing right now */}
-      <circle cx={width - 2.5} cy={toY(last.rate)} r={2.4} fill={strokeColor} />
+      <circle cx={width - 2.5} cy={toY(last)} r={2.4} fill={strokeColor} />
     </svg>
   );
 }

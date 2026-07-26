@@ -37,9 +37,16 @@ services:
       # Milestone 3: aggregator identity + tamper-evident log / checkpoints.
       AGGREGATOR_KEY_PATH: /app/keys/aggregator.key
       CHECKPOINT_REPO_PATH: /app/checkpoint-repo
-      CHECKPOINT_TICK_SECONDS: "60"
+      # Sealing cadence. checkpoints._should_checkpoint fires on entries-OR-age,
+      # and the tick only *attempts* it — so the age bound is what decides how
+      # long a fresh incident's log entries sit unsealed, and therefore whether a
+      # certificate requested moments after detection carries Merkle inclusion
+      # proofs or is honestly marked "awaiting_checkpoint". At an hour (the
+      # library default) that meant waiting on the 50-entry trigger, ~a minute of
+      # dead air mid-demo. 30s bounds it without changing what a checkpoint is.
+      CHECKPOINT_TICK_SECONDS: "10"
       CHECKPOINT_MAX_ENTRIES: "50"
-      CHECKPOINT_MAX_AGE_SECONDS: "3600"
+      CHECKPOINT_MAX_AGE_SECONDS: "30"
       # Milestone 4: Evidence Certificate issuance rate limit (per IP).
       CERT_RATE_LIMIT_MAX: "5"
       CERT_RATE_LIMIT_WINDOW_SECONDS: "600"
