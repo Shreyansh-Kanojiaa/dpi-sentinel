@@ -31,7 +31,20 @@ services:
       WITNESS_REGISTRY_BACKOFF_CAP_SECONDS: "8"
       MIN_PARTICIPATION_FRACTION: "0.66"
       AGREEMENT_SUPERMAJORITY_FRACTION: "0.6"
-      WINDOW_SECONDS: "60"
+      # quorum.py's aggregation window: how recent an observation must be to
+      # still count as a witness's current "vote". This is what decides how
+      # long a DEAD witness keeps counting as reporting, so it has to be sized
+      # against PROBE_INTERVAL_SECONDS (8s), not picked as a round number. At
+      # the old 60s a stopped witness stayed in the denominator's numerator for
+      # a full minute — measured: stopping witness-b and witness-c left the page
+      # reading "3/3 assigned witnesses reporting · Working normally" for 61s
+      # after both were demonstrably down, which is precisely the "silence
+      # treated as health" failure this project exists to refuse. 30s still
+      # tolerates ~3 consecutive missed probes (a hiccup can't flip a rail)
+      # while surfacing a genuinely silent witness in ~half the time.
+      # Deliberately still SEPARATE from OBSERVATION_FRESHNESS_SECONDS below —
+      # equal values today, different jobs (replay bound vs aggregation window).
+      WINDOW_SECONDS: "30"
       QUORUM_TICK_SECONDS: "5"
       OBSERVATION_FRESHNESS_SECONDS: "30"
       # Milestone 3: aggregator identity + tamper-evident log / checkpoints.
@@ -43,10 +56,25 @@ services:
       # certificate requested moments after detection carries Merkle inclusion
       # proofs or is honestly marked "awaiting_checkpoint". At an hour (the
       # library default) that meant waiting on the 50-entry trigger, ~a minute of
-      # dead air mid-demo. 30s bounds it without changing what a checkpoint is.
+      # dead air mid-demo. Lowered again 30 -> 15 to shrink the window in which
+      # a freshly-appended entry is still unsealed.
+      #
+      # IMPORTANT, measured 28 July 2026 — this constant is NOT the whole story.
+      # certificates._log_evidence_item resolves the inclusion proof ONCE, at
+      # issuance, and bakes the result into the signed document. So a
+      # certificate issued before its incident entry is sealed carries
+      # "awaiting_checkpoint" / proof:null FOREVER — re-verifying it later still
+      # reports inclusion_proofs and checkpoint_anchor as passed:null, even
+      # though the entry is by then provably in a checkpoint. Measured: issued
+      # ~24s after detection -> two null checks permanently; issued ~57s after
+      # detection -> three green checks. At the scripted demo pace (break at
+      # ~1:50, certificate at ~3:20) the gap is ~80s, comfortably safe; the
+      # runbook now says to leave ~30s regardless. This is a real design
+      # limitation, not just demo timing — see the post-Bangalore note in
+      # DPI_Sentinel_Preflight_Runbook.md.
       CHECKPOINT_TICK_SECONDS: "10"
       CHECKPOINT_MAX_ENTRIES: "50"
-      CHECKPOINT_MAX_AGE_SECONDS: "30"
+      CHECKPOINT_MAX_AGE_SECONDS: "15"
       # Milestone 4: Evidence Certificate issuance rate limit (per IP).
       CERT_RATE_LIMIT_MAX: "5"
       CERT_RATE_LIMIT_WINDOW_SECONDS: "600"

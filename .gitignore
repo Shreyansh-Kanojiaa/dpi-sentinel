@@ -52,4 +52,6 @@ checkpoint-repo/
 # other is a spoken script. README.md + CLAUDE.md remain the versioned docs.
 TECHNICAL_REFERENCE.md
 DEMO_SCRIPT_5MIN.md
+DPI_Sentinel_Preflight_Runbook.md
+DPI_Sentinel_Preflight_Runbook.md.pdf
 .~lock.*#
