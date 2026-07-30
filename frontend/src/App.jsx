@@ -80,11 +80,53 @@ function StatusDot({ status }) {
   );
 }
 
+// The pitch's central claim, made visible: a rail's status is consensus across
+// independent witnesses, never one server's opinion. One mark per ASSIGNED
+// witness (WitnessRailAssignment, Milestone 5) — filled if that witness is
+// currently reporting the rail healthy, rust if it's reporting it unhealthy,
+// hollow if it's assigned but silent.
+//
+// Fill state, not hue alone, carries the reporting/silent distinction, so the
+// row survives a projector and colour blindness. That matters because silence
+// is the one state this project refuses to round off to health (quorum.py's
+// insufficient_data): a quiet witness has to stay visible as a gap in the
+// evidence, not vanish from the row and leave a shorter, tidier-looking one.
+//
+// Everything here comes from the quorum snapshot GET /api/rails already sends
+// on every poll — no extra request, no backend change. The coverage text
+// beside it is the accessible equivalent, so the marks are aria-hidden.
+function WitnessQuorumMarks({ quorum }) {
+  const assigned = quorum?.assigned_count ?? 0;
+  if (!assigned) return null;
+
+  const reporting = quorum.reporting_witness_ids || [];
+  const unhealthy = new Set(quorum.unhealthy_witness_ids || []);
+  // Silent witnesses can't be named — the snapshot only lists who DID report —
+  // so they render as the remainder. An unnamed hollow mark is still the exact
+  // honest claim: assigned, not heard from.
+  const marks = reporting
+    .map((id) => (unhealthy.has(id) ? "down" : "up"))
+    .concat(Array(Math.max(0, assigned - reporting.length)).fill("silent"));
+
+  return (
+    <span className="wq-marks" aria-hidden="true">
+      {marks.map((kind, i) => (
+        <span key={i} className={`wq-mark wq-mark--${kind}`} />
+      ))}
+    </span>
+  );
+}
+
 function RailRow({ rail, expanded, onToggle }) {
   const u = rail.uptime_24h || {};
   const plain = RAIL_PLAIN[rail.status];
+  // The row itself carries the verdict, not just the words inside it. During
+  // the demo a rail flips to degraded while the audience is watching a
+  // projector; recolouring 14px of text is not an event they can see happen.
+  // CSS transitions the edge and wash, so it only animates on a real state
+  // change rather than on every 4s poll re-render.
   return (
-    <div className="rail-row">
+    <div className={`rail-row rail-row--${rail.status}`}>
       <div className="rail-main" onClick={onToggle}>
         <div className="rail-chevron">{expanded ? "▾" : "▸"}</div>
 
@@ -111,9 +153,30 @@ function RailRow({ rail, expanded, onToggle }) {
           {/* Milestone 5's per-rail coverage, on the row itself. The backend
               already computed it (main.serialize_rail); leaving it only in the
               ledger panel far below meant the thing that changes when a witness
-              goes quiet was invisible next to the status it changes. */}
+              goes quiet was invisible next to the status it changes.
+              It is no longer styled as a footnote: this line is the evidence
+              the status rests on, so it reads at the same weight as the status
+              rather than in the row's quietest grey. */}
           {rail.witness_coverage && (
-            <div className="rail-coverage">{rail.witness_coverage}</div>
+            <div className="rail-coverage">
+              <WitnessQuorumMarks quorum={rail.quorum} />
+              <span className="rail-coverage-text">
+                {rail.witness_coverage}
+                {/* Participation and agreement are two separate checks
+                    (quorum.py), and the coverage string only reports the
+                    first. Without this clause a fully-failing rail reads
+                    "3/3 assigned witnesses reporting" beside three rust
+                    marks, which looks self-contradictory until someone
+                    explains that "reporting" counts who spoke, not what
+                    they said. Derived from the snapshot already on the
+                    row — it adds no claim the marks don't already make. */}
+                {rail.quorum?.unhealthy_witness_ids?.length > 0 && (
+                  <span className="rail-coverage-flag">
+                    {" · "}{rail.quorum.unhealthy_witness_ids.length} reporting failure
+                  </span>
+                )}
+              </span>
+            </div>
           )}
         </div>
       </div>

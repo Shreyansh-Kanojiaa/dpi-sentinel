@@ -1,8 +1,13 @@
 """
 DPI Sentinel — tamper-evident log verifier (Milestone 3).
 
-Run manually:
-    python verify_log.py
+Run manually — inside the container, where the log, the aggregator's signing key
+and the git checkpoint repo all live (checks 2b/2c need the latter two):
+
+    docker compose exec aggregator python verify_log.py
+
+Bare `python verify_log.py` on the host reads DB_URL's default (./dpi_sentinel.db),
+which under Docker is not the aggregator's database.
 
 Two independent checks, reported separately:
 
@@ -35,7 +40,7 @@ from pathlib import Path
 
 from nacl.exceptions import BadSignatureError
 from nacl.signing import VerifyKey
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
 import merkle
@@ -208,6 +213,24 @@ def verify_checkpoints(db) -> bool:
 
 def main():
     engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+
+    # SQLite CREATES an empty file for a path that doesn't exist, so pointing this
+    # at the wrong DB doesn't fail as "missing database" — it fails 40 lines deep
+    # as "no such table: log_entries", which reads like a corrupt/empty chain
+    # rather than a wrong --DB_URL. The usual cause: running this on the host
+    # (default ./dpi_sentinel.db) while the real log lives in the aggregator
+    # container's volume. Say so instead of raising.
+    if not inspect(engine).has_table(LogEntry.__tablename__):
+        print(f"{RED}No '{LogEntry.__tablename__}' table in {DB_URL}{RESET}")
+        print(
+            "\nThat database is empty or isn't the aggregator's. Under Docker the log,\n"
+            "the signing key and the git checkpoint repo all live inside the container\n"
+            "(checks 2b/2c need the latter two), so verify there:\n\n"
+            "    docker compose exec aggregator python verify_log.py\n\n"
+            "To check a different database, set DB_URL."
+        )
+        sys.exit(2)
+
     db = sessionmaker(bind=engine)()
     try:
         print(f"Verifying log in {DB_URL}")

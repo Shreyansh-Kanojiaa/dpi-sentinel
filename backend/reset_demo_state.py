@@ -41,16 +41,20 @@ WHAT THIS NEVER TOUCHES (the permanent record):
     a cosmetic dangling reference, not a functional break. Reported below,
     not silently left for you to discover later.
 
-Run manually:
-    python reset_demo_state.py           # asks for a typed confirmation
-    python reset_demo_state.py --yes     # skips the prompt (e.g. scripted use)
+Run manually — inside the container, where the aggregator's DB actually lives.
+Bare `python reset_demo_state.py` on the host reads DB_URL's default
+(./dpi_sentinel.db), which under Docker is NOT the aggregator's database; it
+refuses rather than reporting a reset it didn't perform.
+
+    docker compose exec aggregator python reset_demo_state.py        # typed confirmation
+    docker compose exec aggregator python reset_demo_state.py --yes  # skips the prompt
 """
 
 import argparse
 import os
 import sys
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
 from historical_seed import seed_historical_incidents
@@ -132,6 +136,21 @@ def main():
     args = parser.parse_args()
 
     engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+
+    # SQLite creates an empty file for a missing path rather than erroring, so
+    # running this on the host (DB_URL's default) against a Docker deployment
+    # hits an empty DB. The danger isn't the traceback — it's concluding "nothing
+    # to clean" and walking into a demo with the container's stale state intact.
+    if not inspect(engine).has_table(ProbeResult.__tablename__):
+        print(f"{RED}No '{ProbeResult.__tablename__}' table in {DB_URL}{RESET}")
+        print(
+            "\nThat database is empty or isn't the aggregator's — so NOTHING WAS RESET.\n"
+            "Under Docker the real state lives in the container's volume:\n\n"
+            "    docker compose exec aggregator python reset_demo_state.py\n\n"
+            "To target a different database, set DB_URL."
+        )
+        sys.exit(2)
+
     db = sessionmaker(bind=engine)()
     try:
         print(f"Resetting demo display state in {DB_URL}")

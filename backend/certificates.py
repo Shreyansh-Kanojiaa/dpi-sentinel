@@ -154,17 +154,54 @@ def find_covering_incident(db: Session, rail: Rail, claimed_ts: datetime) -> Inc
     )
 
 
-def _incident_log_entries(db: Session, incident_id: int) -> list[LogEntry]:
+def _incident_log_entries(db: Session, incident: Incident) -> list[LogEntry]:
     """The hash-chain entries that record this incident's timeline. Matched
     by parsing each incident_event payload (they're small and few) rather
-    than substring-matching JSON, which would be brittle."""
+    than substring-matching JSON, which would be brittle.
+
+    incident_id ALONE is not a safe key here, and this bit me in practice.
+    The log is permanent and keyed by the incident_id that was current when
+    the entry was appended, but Incident rows are not permanent —
+    reset_demo_state.py deletes live incidents, which frees their primary
+    keys, and SQLite then hands the same id to the next incident. So a fresh
+    incident can inherit an older, unrelated incident's chain entries.
+
+    Observed 28 July 2026: a certificate for an incident that opened at
+    04:16:45 cited entries from 03:52, including a "Resolved" event dated
+    before its own incident began. Every hash and proof checked out — the
+    entries are genuine, they just belong to a different outage. On a printed
+    evidence document that is incoherent in exactly the way this project
+    exists to avoid.
+
+    Bounding by the incident's own start closes it: an incident's first
+    entry IS its "Detected" event at started_at, so no legitimate entry can
+    predate it and nothing real is dropped. Entries without a parseable
+    timestamp are excluded rather than included — for an evidentiary
+    document, omitting an unplaceable record is safer than attaching one
+    that may belong to someone else's incident.
+    """
     rows = (
         db.query(LogEntry)
         .filter(LogEntry.entry_type == "incident_event")
         .order_by(LogEntry.sequence_number.asc())
         .all()
     )
-    return [r for r in rows if json.loads(r.payload).get("incident_id") == incident_id]
+
+    matched = []
+    for r in rows:
+        payload = json.loads(r.payload)
+        if payload.get("incident_id") != incident.id:
+            continue
+        raw_ts = payload.get("timestamp")
+        if not raw_ts:
+            continue
+        try:
+            entry_ts = datetime.fromisoformat(raw_ts)
+        except ValueError:
+            continue
+        if entry_ts >= incident.started_at:
+            matched.append(r)
+    return matched
 
 
 def _log_evidence_item(db: Session, entry: LogEntry) -> dict:
@@ -241,7 +278,7 @@ def issue_certificate(
         },
         "issued_at": now.isoformat(),
         "log_evidence": [
-            _log_evidence_item(db, e) for e in _incident_log_entries(db, incident.id)
+            _log_evidence_item(db, e) for e in _incident_log_entries(db, incident)
         ],
         "disclaimer": DISCLAIMER,
     }

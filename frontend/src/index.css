@@ -231,6 +231,14 @@ input:disabled { background: var(--paper-raised); color: var(--stone); }
   flex-shrink: 0;
   padding-bottom: 2px;
 }
+/* The page's headline verdict, and the element the demo script points at
+   twice. At the shared .stamp size it was the same weight as an inline tag on
+   a rail row; it reads from the back of a room now. */
+.masthead-status > .stamp {
+  font-size: 12.5px;
+  letter-spacing: 0.1em;
+  padding: 7px 15px;
+}
 .masthead-updated {
   display: flex;
   justify-content: flex-end;
@@ -303,10 +311,38 @@ a.btn-primary, a.btn-ghost {
   margin-bottom: 2px;
 }
 
+/* The row carries the verdict, not only the words inside it — a rail flipping
+   to degraded mid-demo has to be visible as an event from the back of a room,
+   which 14px of recoloured text is not.
+
+   The left rule is always present at 3px and merely changes colour, and the
+   14px inset is paid by an equal negative margin, so a status change moves
+   nothing: no reflow, no text jumping sideways under the pointer. The wash
+   bleeds into the page gutter while the text stays optically aligned with the
+   section headings above it.
+
+   Only "degraded" gets a fill. insufficient_data gets the rule alone, because
+   it is a flag on the evidence, not an alarm about the rail — the page must
+   not shout "outage" at a state that explicitly means "can't tell". */
 .rail-row {
   border-bottom: 1px solid var(--stone-line);
-  padding: 18px 0;
+  padding: 18px 14px;
+  margin: 0 -14px;
+  /* The left rule is an inset shadow, not a border, so it takes part in no
+     layout at all: the 14px padding is cancelled exactly by the -14px margin,
+     the row's text stays optically aligned with .rail-ledger-head above it,
+     and a status change moves nothing on the page. */
+  box-shadow: inset 3px 0 0 0 transparent;
+  transition: box-shadow 0.45s ease, background-color 0.45s ease;
 }
+.rail-row--degraded {
+  box-shadow: inset 3px 0 0 0 var(--rust);
+  /* Deliberately weaker than --rust-dim, which is what .copilot fills itself
+     with. The copilot renders INSIDE this row, and at equal tints the panel
+     would dissolve into its own background exactly when it matters most. */
+  background-color: color-mix(in srgb, var(--rust-dim) 50%, var(--paper));
+}
+.rail-row--insufficient_data { box-shadow: inset 3px 0 0 0 var(--amber); }
 .rail-main {
   cursor: pointer;
   display: flex;
@@ -356,12 +392,38 @@ a.btn-primary, a.btn-ghost {
   margin-top: 4px;
   line-height: 1.5;
 }
+/* "That line matters more than the green dot" is the demo's own framing of
+   this string, so it no longer renders in the row's quietest grey at its
+   smallest size. It sits one step below the status headline, not four. */
 .rail-coverage {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--stone);
-  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 7px;
 }
+.rail-coverage-text {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+.rail-coverage-flag { color: var(--rust); font-weight: 600; }
+
+/* One mark per assigned witness. Filled = reporting, hollow = assigned but
+   silent, rust = reporting the rail unhealthy. The hollow ring is the point:
+   a witness that went quiet leaves a visible gap in the evidence rather than
+   shortening the row into a tidier-looking full set. */
+.wq-marks { display: inline-flex; gap: 5px; align-items: center; }
+.wq-mark {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--green);
+  background: var(--green);
+  transition: background-color 0.35s ease, border-color 0.35s ease;
+}
+.wq-mark--down { border-color: var(--rust); background: var(--rust); }
+.wq-mark--silent { border-color: var(--stone); background: transparent; }
 .rail-stat { font-family: var(--font-mono); font-size: 13.5px; }
 .rail-stat-value { display: block; }
 .rail-stat-label {
@@ -935,8 +997,26 @@ a.btn-primary, a.btn-ghost {
   body { background: #fff; font-size: 10pt; }
   .page, .page--narrow { max-width: none; padding: 0; }
 
-  /* The sheet fills the page: its own border is the document's frame. */
-  .cert-doc { max-width: none; border-width: 1.5px; padding: 16px 18px 12px; }
+  /* The sheet fills the page: its own border is the document's frame.
+     Border width is in pt, not px, and that is load-bearing rather than
+     stylistic. At 1.5px the frame is a half-device-pixel once rasterised to
+     PDF, and the RIGHT edge rounds away entirely while top/bottom/left
+     survive — an evidence document printing with three sides of a box.
+     1pt maps to a whole PDF unit (1/72in) and strokes on all four sides. */
+  .cert-doc {
+    max-width: none;
+    border-width: 1pt;
+    padding: 16px 18px 12px;
+    /* Same lesson as min-height below, in the other axis. At full width the
+       sheet's right edge lands a rounding error outside the @page margin box,
+       Chrome clips there, and the right border prints as a single near-white
+       pixel while the left prints solid — measured at 600dpi: left stroke 6px
+       at gray 27, right 1px at gray 227. A document that frames itself on
+       three sides looks defective in exactly the way an evidence document
+       cannot afford. 1mm of slack costs nothing visually and puts the whole
+       stroke inside the clip. */
+    margin-right: 1mm;
+  }
   .cert-doc-title { font-size: 21px; }
   .cert-issuer { font-size: 18px; }
   /* The sheet fills the page rather than floating in the top two-thirds.
